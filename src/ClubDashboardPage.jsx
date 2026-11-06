@@ -11,18 +11,16 @@ import {
   Loader2,
   LogOut,
   MapPin,
-  Plus,
   RefreshCw,
   Settings,
   Shield,
   Trash2,
+  Trophy,
   Users,
   X,
 } from 'lucide-react'
 import {
-  addClubTrack,
   clubError,
-  deleteClubTrack,
   fetchClub,
   fetchClubMembers,
   fetchClubRaces,
@@ -81,6 +79,8 @@ const copy = {
     raceSubtitle: 'Saved desktop race results appear here after synchronization.',
     raceEmpty: 'No race results yet.',
     raceEmptyHint: 'Race data from the YurLaps app and web will be integrated here.',
+    filterTrack: 'Filter by track', filterFrom: 'From', filterTo: 'To', newest: 'Newest', oldest: 'Oldest',
+    records: 'Race best laps', archived: 'Archived', appOnlyTrack: 'Tracks are created, edited, and archived from the YurLaps Windows app.',
     raceDate: 'Race date',
     trackName: 'Track',
     location: 'Location',
@@ -102,7 +102,7 @@ const copy = {
     noTransponders: 'No transponders yet.',
     noMembers: 'No active members yet.',
     trackTitle: 'Tracks',
-    trackSubtitle: 'Tracks owned by this club. Only leaders and co-leaders can add tracks by default.',
+    trackSubtitle: 'Read-only track catalog. Track changes are managed from the YurLaps Windows app.',
     addTrack: 'Add track',
     trackFormName: 'Track name',
     trackFormAddress: 'Track address',
@@ -179,6 +179,8 @@ const copy = {
     raceSubtitle: 'Hasil race tersimpan dari aplikasi YurLaps muncul di sini setelah sinkronisasi.',
     raceEmpty: 'Belum ada hasil race.',
     raceEmptyHint: 'Simpan race di aplikasi YurLaps menggunakan akun leader club ini.',
+    filterTrack: 'Filter track', filterFrom: 'Dari', filterTo: 'Sampai', newest: 'Terbaru', oldest: 'Terlama',
+    records: 'Best lap race', archived: 'Diarsipkan', appOnlyTrack: 'Track dibuat, diubah, dan diarsipkan dari aplikasi YurLaps Windows.',
     raceDate: 'Tanggal race',
     trackName: 'Track',
     location: 'Lokasi',
@@ -200,7 +202,7 @@ const copy = {
     noTransponders: 'Belum ada transponder.',
     noMembers: 'Belum ada member aktif.',
     trackTitle: 'Track',
-    trackSubtitle: 'Daftar track milik club. Defaultnya hanya leader dan co-leader yang dapat menambahkan track.',
+    trackSubtitle: 'Katalog track hanya untuk dilihat. Perubahan track dilakukan dari aplikasi YurLaps Windows.',
     addTrack: 'Tambah track',
     trackFormName: 'Nama track',
     trackFormAddress: 'Alamat track',
@@ -326,6 +328,7 @@ export default function ClubDashboardPage({
   const [tracks, setTracks] = useState([])
   const [races, setRaces] = useState([])
   const [selectedRace, setSelectedRace] = useState(null)
+  const [raceFilter, setRaceFilter] = useState({ track: '', from: '', to: '', order: 'newest' })
 
   useEffect(() => {
     if (!activeClubId || !user?.id) return undefined
@@ -352,15 +355,10 @@ export default function ClubDashboardPage({
     }
   }, [activeClubId, user?.id])
 
-  const [profileForm, setProfileForm] = useState({ name: '', description: '', address: '' })
+  const [profileForm, setProfileForm] = useState({ name: '', description: '', address: '', avatar_url: '' })
   const [profileSaving, setProfileSaving] = useState(false)
   const [profileError, setProfileError] = useState('')
   const [profileSaved, setProfileSaved] = useState(false)
-
-  const [trackForm, setTrackForm] = useState({ name: '', address: '' })
-  const [trackSaving, setTrackSaving] = useState(false)
-  const [trackError, setTrackError] = useState('')
-  const [trackBusyId, setTrackBusyId] = useState('')
 
   const [memberBusy, setMemberBusy] = useState('')
   const [memberError, setMemberError] = useState('')
@@ -453,6 +451,7 @@ export default function ClubDashboardPage({
           name: clubRow.name || '',
           description: clubRow.description || '',
           address: clubRow.address || '',
+          avatar_url: clubRow.avatar_url || '',
         })
         setSettingsForm({
           visibility: clubRow.visibility || 'public',
@@ -486,7 +485,6 @@ export default function ClubDashboardPage({
   const canEditClub = hasPermission(club, role, 'edit_club')
   const canManageMembers = hasPermission(club, role, 'manage_members')
   const canReview = hasPermission(club, role, 'review_applications')
-  const canManageTracks = hasPermission(club, role, 'manage_tracks')
 
   const refreshMembers = async () => {
     if (!activeClubId) return
@@ -517,39 +515,19 @@ export default function ClubDashboardPage({
     }
   }
 
-  const handleAddTrack = async (event) => {
-    event.preventDefault()
-    if (!activeClubId || !user) return
-    if (!trackForm.name.trim()) {
-      setTrackError(text.trackRequired)
-      return
-    }
-    setTrackSaving(true)
-    setTrackError('')
-    try {
-      const created = await addClubTrack(activeClubId, user.id, trackForm)
-      setTracks((current) => [...current, created])
-      setTrackForm({ name: '', address: '' })
-    } catch (error) {
-      setTrackError(clubError(error, language))
-    } finally {
-      setTrackSaving(false)
-    }
-  }
-
-  const handleDeleteTrack = async (track) => {
-    if (!window.confirm(text.deleteTrackConfirm)) return
-    setTrackBusyId(track.id)
-    setTrackError('')
-    try {
-      await deleteClubTrack(track.id)
-      setTracks((current) => current.filter((item) => item.id !== track.id))
-    } catch (error) {
-      setTrackError(clubError(error, language))
-    } finally {
-      setTrackBusyId('')
-    }
-  }
+  const filteredRaces = races
+    .filter((race) => !raceFilter.track || race.track_name === raceFilter.track)
+    .filter((race) => !raceFilter.from || String(race.raced_at || '').slice(0, 10) >= raceFilter.from)
+    .filter((race) => !raceFilter.to || String(race.raced_at || '').slice(0, 10) <= raceFilter.to)
+    .sort((a, b) => raceFilter.order === 'oldest'
+      ? new Date(a.raced_at || 0) - new Date(b.raced_at || 0)
+      : new Date(b.raced_at || 0) - new Date(a.raced_at || 0))
+  const raceRecords = tracks.map((track) => {
+    const laps = races.flatMap((race) => (race.track_name === track.name ? (race.results || []) : []))
+      .flatMap((row) => Array.isArray(row.laps) ? row.laps : [])
+      .map(Number).filter((value) => Number.isFinite(value) && value > 0)
+    return { ...track, best: laps.length ? Math.min(...laps) : null }
+  }).filter((track) => track.best).sort((a, b) => a.best - b.best).slice(0, 10)
 
   const handleReview = async (member, approve) => {
     if (!activeClubId) return
@@ -754,8 +732,8 @@ export default function ClubDashboardPage({
           <div className="pointer-events-none absolute -right-16 -top-24 h-64 w-64 rounded-full bg-ocean/40 blur-3xl" />
           <div className="relative flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex min-w-0 items-center gap-4">
-              <span className="grid h-20 w-20 shrink-0 place-items-center rounded-2xl border border-white/20 bg-white/10 font-display text-2xl font-extrabold">
-                {initialsOf(club.name)}
+              <span className="grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-2xl border border-white/20 bg-white/10 font-display text-2xl font-extrabold">
+                {club.avatar_url ? <img src={club.avatar_url} alt={club.name} className="h-full w-full object-cover" /> : initialsOf(club.name)}
               </span>
               <div className="min-w-0">
                 <p className="text-xs font-bold uppercase tracking-[0.22em] text-blue-300">
@@ -867,6 +845,10 @@ export default function ClubDashboardPage({
                     className={`${inputClass} resize-none`}
                   />
                 </label>
+                <label className="block">
+                  <span className={labelClass}>Club photo URL</span>
+                  <input type="url" value={profileForm.avatar_url} onChange={(event) => setProfileForm((current) => ({ ...current, avatar_url: event.target.value }))} placeholder="https://..." className={inputClass} />
+                </label>
                 {profileError && (
                   <p className="rounded-xl bg-red-50 px-4 py-3 text-sm font-semibold text-red-600">
                     {profileError}
@@ -921,7 +903,19 @@ export default function ClubDashboardPage({
             </h2>
             <p className="mt-1 text-sm leading-6 text-slate-500">{text.raceSubtitle}</p>
 
-            {races.length === 0 ? (
+            <div className="mt-6 grid gap-3 rounded-2xl bg-mist/60 p-4 sm:grid-cols-4">
+              <select value={raceFilter.track} onChange={(event) => setRaceFilter((current) => ({ ...current, track: event.target.value }))} className={inputClass}>
+                <option value="">{text.filterTrack}</option>
+                {tracks.map((track) => <option key={track.id} value={track.name}>{track.name}</option>)}
+              </select>
+              <input type="date" value={raceFilter.from} onChange={(event) => setRaceFilter((current) => ({ ...current, from: event.target.value }))} aria-label={text.filterFrom} className={inputClass} />
+              <input type="date" value={raceFilter.to} onChange={(event) => setRaceFilter((current) => ({ ...current, to: event.target.value }))} aria-label={text.filterTo} className={inputClass} />
+              <select value={raceFilter.order} onChange={(event) => setRaceFilter((current) => ({ ...current, order: event.target.value }))} className={inputClass}>
+                <option value="newest">{text.newest}</option><option value="oldest">{text.oldest}</option>
+              </select>
+            </div>
+
+            {filteredRaces.length === 0 ? (
               <div className="mt-7 grid place-items-center gap-2 rounded-2xl border border-dashed border-slate-200 py-12 text-center">
                 <Flag size={26} className="text-slate-300" />
                 <p className="text-sm font-bold text-slate-600">{text.raceEmpty}</p>
@@ -929,7 +923,7 @@ export default function ClubDashboardPage({
               </div>
             ) : (
               <ul className="mt-7 divide-y divide-slate-100 overflow-hidden rounded-2xl border border-slate-200">
-                {races.map((race) => (
+                {filteredRaces.map((race) => (
                   <li key={race.id} className="flex flex-wrap items-center gap-3 px-4 py-4">
                     <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-mist text-ocean">
                       <Flag size={18} />
@@ -956,6 +950,12 @@ export default function ClubDashboardPage({
                 ))}
               </ul>
             )}
+            {raceRecords.length > 0 && <div className="mt-7 rounded-2xl border border-amber-100 bg-amber-50/60 p-4">
+              <h3 className="flex items-center gap-2 text-sm font-extrabold uppercase tracking-wide text-amber-700"><Trophy size={16} /> {text.records}</h3>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                {raceRecords.map((record, index) => <div key={record.id} className="flex items-center justify-between rounded-xl bg-white px-3 py-2 text-sm"><span className="font-bold text-ink">#{index + 1} {record.name}</span><span className="font-mono font-bold text-amber-700">{(record.best / 1000).toFixed(3)}s</span></div>)}
+              </div>
+            </div>}
           </section>
         ) : tab === 'member' ? (
           <section className="mt-6 rounded-[2rem] border border-blue-100 bg-white p-7 shadow-card sm:p-9">
@@ -1115,52 +1115,7 @@ export default function ClubDashboardPage({
               {text.trackTitle}
             </h2>
             <p className="mt-1 text-sm leading-6 text-slate-500">{text.trackSubtitle}</p>
-
-            {canManageTracks && (
-              <form onSubmit={handleAddTrack} className="mt-6 rounded-2xl bg-mist/60 p-4">
-                <div className="grid gap-4 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
-                  <label className="block">
-                    <span className={labelClass}>{text.trackFormName}</span>
-                    <input
-                      type="text"
-                      value={trackForm.name}
-                      onChange={(event) =>
-                        setTrackForm((current) => ({ ...current, name: event.target.value }))
-                      }
-                      className={inputClass}
-                    />
-                  </label>
-                  <label className="block">
-                    <span className={labelClass}>{text.trackFormAddress}</span>
-                    <input
-                      type="text"
-                      value={trackForm.address}
-                      onChange={(event) =>
-                        setTrackForm((current) => ({ ...current, address: event.target.value }))
-                      }
-                      className={inputClass}
-                    />
-                  </label>
-                  <button
-                    type="submit"
-                    disabled={trackSaving}
-                    className="inline-flex h-[50px] items-center justify-center gap-2 rounded-2xl bg-ocean px-5 text-sm font-bold text-white transition hover:bg-[#1855db] disabled:cursor-wait disabled:opacity-60"
-                  >
-                    {trackSaving ? (
-                      <Loader2 size={16} className="animate-spin" />
-                    ) : (
-                      <Plus size={16} />
-                    )}
-                    {trackSaving ? text.adding : text.add}
-                  </button>
-                </div>
-                {trackError && (
-                  <p className="mt-3 rounded-xl bg-red-50 px-4 py-3 text-sm font-semibold text-red-600">
-                    {trackError}
-                  </p>
-                )}
-              </form>
-            )}
+            <p className="mt-5 rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm font-semibold text-ocean">{text.appOnlyTrack}</p>
 
             {tracks.length === 0 ? (
               <div className="mt-7 grid place-items-center gap-2 rounded-2xl border border-dashed border-slate-200 py-12 text-center">
@@ -1180,21 +1135,7 @@ export default function ClubDashboardPage({
                         {track.address || text.noAddress}
                       </p>
                     </div>
-                    {canManageTracks && (
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteTrack(track)}
-                        disabled={trackBusyId === track.id}
-                        aria-label={text.remove}
-                        className="rounded-full p-2 text-slate-400 transition hover:bg-red-50 hover:text-red-500 disabled:opacity-50"
-                      >
-                        {trackBusyId === track.id ? (
-                          <Loader2 size={16} className="animate-spin" />
-                        ) : (
-                          <Trash2 size={16} />
-                        )}
-                      </button>
-                    )}
+                    {track.deleted_at && <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold uppercase text-slate-500">{text.archived}</span>}
                   </li>
                 ))}
               </ul>

@@ -212,6 +212,10 @@ export async function updateClubProfile(clubId, values) {
     p_address: values.address,
   })
   if (error) throw error
+  if (values.avatar_url !== undefined) {
+    const { error: avatarError } = await client.from('clubs').update({ avatar_url: values.avatar_url || null }).eq('id', clubId)
+    if (avatarError) throw avatarError
+  }
   return fetchClub(clubId)
 }
 
@@ -268,10 +272,26 @@ export async function fetchClubTracks(clubId) {
     .from('club_tracks')
     .select('*')
     .eq('club_id', clubId)
-    .is('deleted_at', null)
     .order('created_at', { ascending: true })
   if (error) throw error
   return data || []
+}
+
+export async function fetchPracticeSessions(userId, { clubId } = {}) {
+  const client = requireClient()
+  let query = client.from('practice_sessions').select('*').order('started_at', { ascending: false })
+  if (userId) query = query.eq('user_id', userId)
+  if (clubId) query = query.eq('club_id', clubId)
+  const { data, error } = await query
+  if (error) throw error
+  return data || []
+}
+
+export async function updatePracticeVisibility(id, visibility) {
+  const client = requireClient()
+  const { data, error } = await client.from('practice_sessions').update({ visibility }).eq('id', id).select().single()
+  if (error) throw error
+  return data
 }
 
 export async function addClubTrack(clubId, userId, values) {

@@ -21,6 +21,8 @@ import {
   updateAvatar,
   uploadAvatar,
 } from './lib/account'
+import { fetchPracticeSessions, updatePracticeVisibility } from './lib/clubs'
+import { supabase } from './lib/supabase'
 
 const RC_CLASSES = [
   '1/10 Touring',
@@ -88,6 +90,7 @@ const copy = {
     empty: 'No transponders yet. Add your first one above.',
     delete: 'Delete transponder',
     loading: 'Loading your account...',
+    activityTitle: 'My activity', activitySubtitle: 'Race and practice history linked to this account.', practice: 'Practice', race: 'Race', private: 'Private', public: 'Public',
   },
   id: {
     kicker: 'Akun YurLaps',
@@ -125,6 +128,7 @@ const copy = {
     empty: 'Belum ada transponder. Tambahkan yang pertama di atas.',
     delete: 'Hapus transponder',
     loading: 'Memuat akun kamu...',
+    activityTitle: 'Aktivitas saya', activitySubtitle: 'Riwayat race dan practice yang tertaut ke akun ini.', practice: 'Practice', race: 'Race', private: 'Private', public: 'Public',
   },
 }
 
@@ -165,6 +169,8 @@ export default function DashboardPage({ session, language, onBack, onSignOut }) 
   const [adding, setAdding] = useState(false)
   const [formError, setFormError] = useState('')
   const [deletingId, setDeletingId] = useState('')
+  const [practiceSessions, setPracticeSessions] = useState([])
+  const [raceSessions, setRaceSessions] = useState([])
 
   useEffect(() => {
     if (!user) return undefined
@@ -174,7 +180,7 @@ export default function DashboardPage({ session, language, onBack, onSignOut }) 
     setLoadError('')
     setTransError('')
 
-    Promise.allSettled([fetchProfile(user), fetchTransponders(user.id)]).then((results) => {
+    Promise.allSettled([fetchProfile(user), fetchTransponders(user.id), fetchPracticeSessions(user.id), supabase?.from('races').select('id,name,track_name,raced_at').eq('created_by', user.id).order('raced_at', { ascending: false }).limit(20)]).then((results) => {
       if (!active) return
       const [profileResult, transponderResult] = results
 
@@ -200,6 +206,8 @@ export default function DashboardPage({ session, language, onBack, onSignOut }) 
       } else {
         setTransError(getFriendlyError(transponderResult.reason, language))
       }
+      if (results[2]?.status === 'fulfilled') setPracticeSessions(results[2].value)
+      if (results[3]?.status === 'fulfilled' && !results[3].value.error) setRaceSessions(results[3].value.data || [])
 
       setLoading(false)
       setTransLoading(false)
@@ -311,6 +319,16 @@ export default function DashboardPage({ session, language, onBack, onSignOut }) 
 
   const displayName =
     profile.nickname.trim() || profile.full_name.trim() || (user?.email || '').split('@')[0]
+
+  const togglePractice = async (item) => {
+    const next = item.visibility === 'public' ? 'private' : 'public'
+    try {
+      const updated = await updatePracticeVisibility(item.id, next)
+      setPracticeSessions((current) => current.map((row) => row.id === item.id ? updated : row))
+    } catch (error) {
+      setLoadError(getFriendlyError(error, language))
+    }
+  }
 
   return (
     <main className="relative min-h-[calc(100vh-5rem)] overflow-hidden px-5 py-10 sm:px-8 sm:py-14">
@@ -501,6 +519,15 @@ export default function DashboardPage({ session, language, onBack, onSignOut }) 
               )}
             </div>
           </form>
+        </section>
+
+        <section className="mt-6 rounded-[2rem] border border-blue-100 bg-white p-7 shadow-card sm:p-9">
+          <h2 className="font-display text-2xl font-extrabold tracking-[-0.05em] text-ink">{text.activityTitle}</h2>
+          <p className="mt-1 text-sm leading-6 text-slate-500">{text.activitySubtitle}</p>
+          <div className="mt-5 grid gap-3 sm:grid-cols-2">
+            <div className="rounded-2xl bg-mist/60 p-4"><p className="text-xs font-bold uppercase tracking-wide text-slate-400">{text.race}</p><p className="mt-1 font-display text-3xl font-extrabold text-ink">{raceSessions.length}</p><div className="mt-2 space-y-1">{raceSessions.slice(0, 4).map((row) => <p key={row.id} className="truncate text-xs font-semibold text-slate-600">{row.name} · {row.track_name || '—'}</p>)}</div></div>
+            <div className="rounded-2xl bg-mist/60 p-4"><p className="text-xs font-bold uppercase tracking-wide text-slate-400">{text.practice}</p><p className="mt-1 font-display text-3xl font-extrabold text-ink">{practiceSessions.length}</p><div className="mt-2 space-y-2">{practiceSessions.slice(0, 4).map((row) => <div key={row.id} className="flex items-center justify-between gap-2"><span className="truncate text-xs font-semibold text-slate-600">{row.track_name || '—'}</span><button type="button" onClick={() => togglePractice(row)} className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold text-ocean">{row.visibility === 'public' ? text.public : text.private}</button></div>)}</div></div>
+          </div>
         </section>
 
         <section className="mt-6 rounded-[2rem] border border-blue-100 bg-white p-7 shadow-card sm:p-9">
