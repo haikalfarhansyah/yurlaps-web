@@ -287,6 +287,33 @@ export async function fetchPracticeSessions(userId, { clubId } = {}) {
   return data || []
 }
 
+// Build a driver-centric race history from club race snapshots. Race rows are
+// uploaded by the club leader, so filtering only by created_by would hide a
+// member's own participation.
+export async function fetchPersonalRaces(userId) {
+  const client = requireClient()
+  const memberships = await fetchMyMemberships(userId)
+  const clubIds = [...new Set(memberships.filter((row) => row.status === 'active').map((row) => row.club_id))]
+  if (!clubIds.length) return []
+  const { data: transponderRows, error: transponderError } = await client
+    .from('transponders')
+    .select('transponder_id')
+    .eq('user_id', userId)
+  if (transponderError) throw transponderError
+  const transponders = new Set((transponderRows || []).map((row) => String(row.transponder_id)))
+  const raceGroups = await Promise.all(clubIds.map((clubId) => fetchClubRaces(clubId)))
+  return raceGroups.flat().map((race) => {
+    const rows = Array.isArray(race.results) ? race.results : []
+    const personalResults = rows.filter((row) => {
+      const owner = [row.user_id, row.driver_id, row.userId, row.member_user_id].filter(Boolean).map(String)
+      const tp = row.transponder ?? row.transponder_id
+      return owner.includes(String(userId)) || (tp !== undefined && transponders.has(String(tp)))
+    })
+    if (!personalResults.length && String(race.created_by || '') !== String(userId)) return null
+    return { ...race, personal_results: personalResults.length ? personalResults : rows }
+  }).filter(Boolean).sort((a, b) => new Date(b.raced_at || 0) - new Date(a.raced_at || 0))
+}
+
 export async function updatePracticeVisibility(id, visibility) {
   const client = requireClient()
   const { data, error } = await client.from('practice_sessions').update({ visibility }).eq('id', id).select().single()

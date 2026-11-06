@@ -10,6 +10,7 @@ create table if not exists public.clubs (
   name text not null,
   description text not null default '',
   address text not null default '',
+  avatar_url text,
   visibility text not null default 'public'
     check (visibility in ('public', 'private')),
   join_method text not null default 'open'
@@ -54,6 +55,8 @@ create table if not exists public.club_tracks (
   club_id uuid not null references public.clubs (id) on delete cascade,
   name text not null,
   address text not null default '',
+  min_lap_ms integer not null default 1500 check (min_lap_ms >= 100),
+  is_active boolean not null default false,
   created_by uuid references auth.users (id) on delete set null,
   created_at timestamptz not null default now()
 );
@@ -206,12 +209,14 @@ $$;
 -- ---------------------------------------------------------------------------
 -- Community RPCs
 -- ---------------------------------------------------------------------------
+drop function if exists public.list_public_clubs();
 create or replace function public.list_public_clubs()
 returns table (
   id uuid,
   name text,
   description text,
   address text,
+  avatar_url text,
   visibility text,
   join_method text,
   member_count bigint,
@@ -227,6 +232,7 @@ as $$
     club.name,
     club.description,
     club.address,
+    club.avatar_url,
     club.visibility,
     club.join_method,
     count(member.user_id) filter (where member.status = 'active') as member_count,
@@ -535,7 +541,7 @@ create policy "tracks are deletable by permitted members"
 drop policy if exists "races are viewable by club members" on public.races;
 create policy "races are viewable by club members"
   on public.races for select
-  using (public.is_club_member(club_id));
+  using (public.is_club_member(club_id) or created_by = auth.uid());
 
 drop policy if exists "races are writable by permitted members" on public.races;
 create policy "races are writable by permitted members"

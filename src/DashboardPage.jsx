@@ -1,8 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   ArrowLeft,
+  Activity,
+  CalendarDays,
   Camera,
   Check,
+  ChevronRight,
+  Eye,
+  EyeOff,
+  Flag,
+  Filter,
+  Gauge,
   Loader2,
   LogOut,
   Plus,
@@ -21,8 +29,7 @@ import {
   updateAvatar,
   uploadAvatar,
 } from './lib/account'
-import { fetchPracticeSessions, updatePracticeVisibility } from './lib/clubs'
-import { supabase } from './lib/supabase'
+import { fetchPersonalRaces, fetchPracticeSessions, updatePracticeVisibility } from './lib/clubs'
 
 const RC_CLASSES = [
   '1/10 Touring',
@@ -90,7 +97,7 @@ const copy = {
     empty: 'No transponders yet. Add your first one above.',
     delete: 'Delete transponder',
     loading: 'Loading your account...',
-    activityTitle: 'My activity', activitySubtitle: 'Race and practice history linked to this account.', practice: 'Practice', race: 'Race', private: 'Private', public: 'Public',
+    activityTitle: 'My activity', activitySubtitle: 'Your own race participation and practice laps, kept separate from club administration.', practice: 'Practice', race: 'Race', private: 'Private', public: 'Public', all: 'All activity', filterTrack: 'Track', from: 'From', to: 'To', viewLog: 'View lap log', noActivity: 'No personal activity yet.', laps: 'laps', bestLap: 'Best lap', totalLaps: 'Total laps', session: 'session', visibility: 'Visibility',
   },
   id: {
     kicker: 'Akun YurLaps',
@@ -128,7 +135,7 @@ const copy = {
     empty: 'Belum ada transponder. Tambahkan yang pertama di atas.',
     delete: 'Hapus transponder',
     loading: 'Memuat akun kamu...',
-    activityTitle: 'Aktivitas saya', activitySubtitle: 'Riwayat race dan practice yang tertaut ke akun ini.', practice: 'Practice', race: 'Race', private: 'Private', public: 'Public',
+    activityTitle: 'Aktivitas saya', activitySubtitle: 'Partisipasi race dan lap practice milikmu, terpisah dari administrasi community.', practice: 'Practice', race: 'Race', private: 'Private', public: 'Public', all: 'Semua aktivitas', filterTrack: 'Track', from: 'Dari', to: 'Sampai', viewLog: 'Lihat log lap', noActivity: 'Belum ada aktivitas personal.', laps: 'lap', bestLap: 'Best lap', totalLaps: 'Total lap', session: 'sesi', visibility: 'Visibilitas',
   },
 }
 
@@ -142,6 +149,30 @@ function initialsOf(name, email) {
   if (parts.length === 0) return 'Y'
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
   return `${parts[0][0]}${parts[1][0]}`.toUpperCase()
+}
+
+function formatLap(ms) {
+  const value = Number(ms)
+  if (!Number.isFinite(value) || value <= 0) return '—'
+  const minutes = Math.floor(value / 60000)
+  const seconds = Math.floor((value % 60000) / 1000)
+  const millis = Math.round(value % 1000).toString().padStart(3, '0')
+  return `${minutes}:${seconds.toString().padStart(2, '0')}.${millis}`
+}
+
+function activityLaps(item) {
+  if (item.type === 'practice') {
+    const source = item.laps
+    if (Array.isArray(source)) {
+      return source.flatMap((entry) => {
+        if (typeof entry === 'number' || typeof entry === 'string') return [Number(entry)]
+        return entry?.lap_ms || entry?.laps || []
+      }).map(Number).filter(Number.isFinite)
+    }
+    return Object.values(source || {}).flat().map(Number).filter(Number.isFinite)
+  }
+  const rows = item.personal_results || item.results || []
+  return rows.flatMap((row) => Array.isArray(row.laps) ? row.laps : (Array.isArray(row.laps_ms) ? row.laps_ms : (Array.isArray(row.lap_times) ? row.lap_times : []))).map(Number).filter(Number.isFinite)
 }
 
 export default function DashboardPage({ session, language, onBack, onSignOut }) {
@@ -171,6 +202,9 @@ export default function DashboardPage({ session, language, onBack, onSignOut }) 
   const [deletingId, setDeletingId] = useState('')
   const [practiceSessions, setPracticeSessions] = useState([])
   const [raceSessions, setRaceSessions] = useState([])
+  const [activityFilter, setActivityFilter] = useState({ type: 'all', track: '', from: '', to: '' })
+  const [selectedActivity, setSelectedActivity] = useState(null)
+  const [activityLoading, setActivityLoading] = useState(true)
 
   useEffect(() => {
     if (!user) return undefined
@@ -180,7 +214,8 @@ export default function DashboardPage({ session, language, onBack, onSignOut }) 
     setLoadError('')
     setTransError('')
 
-    Promise.allSettled([fetchProfile(user), fetchTransponders(user.id), fetchPracticeSessions(user.id), supabase?.from('races').select('id,name,track_name,raced_at').eq('created_by', user.id).order('raced_at', { ascending: false }).limit(20)]).then((results) => {
+    setActivityLoading(true)
+    Promise.allSettled([fetchProfile(user), fetchTransponders(user.id), fetchPracticeSessions(user.id), fetchPersonalRaces(user.id)]).then((results) => {
       if (!active) return
       const [profileResult, transponderResult] = results
 
@@ -207,10 +242,11 @@ export default function DashboardPage({ session, language, onBack, onSignOut }) 
         setTransError(getFriendlyError(transponderResult.reason, language))
       }
       if (results[2]?.status === 'fulfilled') setPracticeSessions(results[2].value)
-      if (results[3]?.status === 'fulfilled' && !results[3].value.error) setRaceSessions(results[3].value.data || [])
+      if (results[3]?.status === 'fulfilled') setRaceSessions(results[3].value || [])
 
       setLoading(false)
       setTransLoading(false)
+      setActivityLoading(false)
     })
 
     return () => {
@@ -329,6 +365,20 @@ export default function DashboardPage({ session, language, onBack, onSignOut }) 
       setLoadError(getFriendlyError(error, language))
     }
   }
+
+  const activities = [
+    ...raceSessions.map((item) => ({ ...item, type: 'race', activityAt: item.raced_at })),
+    ...practiceSessions.map((item) => ({ ...item, type: 'practice', activityAt: item.started_at })),
+  ]
+  const trackOptions = [...new Set(activities.map((item) => item.track_name).filter(Boolean))].sort()
+  const filteredActivities = activities
+    .filter((item) => activityFilter.type === 'all' || item.type === activityFilter.type)
+    .filter((item) => !activityFilter.track || item.track_name === activityFilter.track)
+    .filter((item) => !activityFilter.from || String(item.activityAt || '').slice(0, 10) >= activityFilter.from)
+    .filter((item) => !activityFilter.to || String(item.activityAt || '').slice(0, 10) <= activityFilter.to)
+    .sort((a, b) => new Date(b.activityAt || 0) - new Date(a.activityAt || 0))
+  const allActivityLaps = activities.flatMap(activityLaps)
+  const personalBest = allActivityLaps.length ? Math.min(...allActivityLaps) : null
 
   return (
     <main className="relative min-h-[calc(100vh-5rem)] overflow-hidden px-5 py-10 sm:px-8 sm:py-14">
@@ -522,13 +572,29 @@ export default function DashboardPage({ session, language, onBack, onSignOut }) 
         </section>
 
         <section className="mt-6 rounded-[2rem] border border-blue-100 bg-white p-7 shadow-card sm:p-9">
-          <h2 className="font-display text-2xl font-extrabold tracking-[-0.05em] text-ink">{text.activityTitle}</h2>
-          <p className="mt-1 text-sm leading-6 text-slate-500">{text.activitySubtitle}</p>
-          <div className="mt-5 grid gap-3 sm:grid-cols-2">
-            <div className="rounded-2xl bg-mist/60 p-4"><p className="text-xs font-bold uppercase tracking-wide text-slate-400">{text.race}</p><p className="mt-1 font-display text-3xl font-extrabold text-ink">{raceSessions.length}</p><div className="mt-2 space-y-1">{raceSessions.slice(0, 4).map((row) => <p key={row.id} className="truncate text-xs font-semibold text-slate-600">{row.name} · {row.track_name || '—'}</p>)}</div></div>
-            <div className="rounded-2xl bg-mist/60 p-4"><p className="text-xs font-bold uppercase tracking-wide text-slate-400">{text.practice}</p><p className="mt-1 font-display text-3xl font-extrabold text-ink">{practiceSessions.length}</p><div className="mt-2 space-y-2">{practiceSessions.slice(0, 4).map((row) => <div key={row.id} className="flex items-center justify-between gap-2"><span className="truncate text-xs font-semibold text-slate-600">{row.track_name || '—'}</span><button type="button" onClick={() => togglePractice(row)} className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold text-ocean">{row.visibility === 'public' ? text.public : text.private}</button></div>)}</div></div>
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-mist text-ocean"><Activity size={21} /></span>
+              <div><h2 className="font-display text-2xl font-extrabold tracking-[-0.05em] text-ink">{text.activityTitle}</h2><p className="mt-1 max-w-2xl text-sm leading-6 text-slate-500">{text.activitySubtitle}</p></div>
+            </div>
+            <div className="grid grid-cols-3 gap-2 text-center">
+              <div className="rounded-2xl bg-blue-50 px-3 py-2"><p className="text-[10px] font-bold uppercase tracking-wide text-ocean">{text.race}</p><p className="font-display text-xl font-extrabold text-ink">{raceSessions.length}</p></div>
+              <div className="rounded-2xl bg-amber-50 px-3 py-2"><p className="text-[10px] font-bold uppercase tracking-wide text-amber-700">{text.practice}</p><p className="font-display text-xl font-extrabold text-ink">{practiceSessions.length}</p></div>
+              <div className="rounded-2xl bg-emerald-50 px-3 py-2"><p className="text-[10px] font-bold uppercase tracking-wide text-emerald-700">{text.bestLap}</p><p className="font-mono text-sm font-extrabold text-ink">{formatLap(personalBest)}</p></div>
+            </div>
           </div>
+
+          <div className="mt-6 grid gap-3 rounded-2xl bg-mist/60 p-4 sm:grid-cols-4">
+            <label className="relative sm:col-span-1"><span className="sr-only">{text.all}</span><Filter size={15} className="pointer-events-none absolute left-3 top-4 text-slate-400" /><select value={activityFilter.type} onChange={(event) => setActivityFilter((current) => ({ ...current, type: event.target.value }))} className={`${inputClass} pl-9`}><option value="all">{text.all}</option><option value="race">{text.race}</option><option value="practice">{text.practice}</option></select></label>
+            <select value={activityFilter.track} onChange={(event) => setActivityFilter((current) => ({ ...current, track: event.target.value }))} className={inputClass}><option value="">{text.filterTrack}</option>{trackOptions.map((track) => <option key={track} value={track}>{track}</option>)}</select>
+            <label className="relative"><CalendarDays size={15} className="pointer-events-none absolute left-3 top-4 text-slate-400" /><input type="date" aria-label={text.from} value={activityFilter.from} onChange={(event) => setActivityFilter((current) => ({ ...current, from: event.target.value }))} className={`${inputClass} pl-9`} /></label>
+            <label className="relative"><CalendarDays size={15} className="pointer-events-none absolute left-3 top-4 text-slate-400" /><input type="date" aria-label={text.to} value={activityFilter.to} onChange={(event) => setActivityFilter((current) => ({ ...current, to: event.target.value }))} className={`${inputClass} pl-9`} /></label>
+          </div>
+
+          {activityLoading ? <div className="mt-6 flex items-center justify-center gap-2 rounded-2xl border border-dashed border-slate-200 py-12 text-sm font-semibold text-slate-500"><Loader2 size={17} className="animate-spin" /> {text.loading}</div> : filteredActivities.length === 0 ? <div className="mt-6 grid place-items-center rounded-2xl border border-dashed border-slate-200 py-12 text-center"><Gauge size={25} className="text-slate-300" /><p className="mt-2 text-sm font-semibold text-slate-500">{text.noActivity}</p></div> : <div className="mt-6 overflow-hidden rounded-2xl border border-slate-200"><ul className="divide-y divide-slate-100">{filteredActivities.map((item) => { const laps = activityLaps(item); const best = laps.length ? Math.min(...laps) : null; return <li key={`${item.type}-${item.id}`} className="flex flex-wrap items-center gap-3 px-4 py-4 transition hover:bg-slate-50"><span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${item.type === 'race' ? 'bg-blue-50 text-ocean' : 'bg-amber-50 text-amber-700'}`}>{item.type === 'race' ? <Flag size={18} /> : <Gauge size={18} />}</span><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><p className="truncate text-sm font-bold text-ink">{item.name || item.track_name || text.practice}</p><span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${item.type === 'race' ? 'bg-blue-50 text-ocean' : 'bg-amber-50 text-amber-700'}`}>{item.type === 'race' ? text.race : text.practice}</span></div><p className="mt-1 flex items-center gap-1.5 text-xs text-slate-500"><CalendarDays size={13} /> {item.track_name || '—'} · {item.activityAt ? new Date(item.activityAt).toLocaleDateString(language === 'id' ? 'id-ID' : 'en-US', { dateStyle: 'medium' }) : '—'}</p></div><div className="hidden text-right sm:block"><p className="text-xs font-bold text-ink">{laps.length} {text.laps}</p><p className="font-mono text-xs text-slate-500">{formatLap(best)}</p></div>{item.type === 'practice' && <button type="button" onClick={() => togglePractice(item)} className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-2 text-[10px] font-bold text-slate-600 hover:bg-blue-50 hover:text-ocean">{item.visibility === 'public' ? <Eye size={13} /> : <EyeOff size={13} />}{item.visibility === 'public' ? text.public : text.private}</button>}<button type="button" onClick={() => setSelectedActivity(item)} className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3.5 py-2 text-xs font-bold text-ocean hover:bg-blue-100">{text.viewLog}<ChevronRight size={14} /></button></li> })}</ul></div>}
         </section>
+
+        {selectedActivity && <div className="fixed inset-0 z-[95] grid place-items-center overflow-y-auto bg-slate-950/45 px-5 py-8 backdrop-blur-sm" role="dialog" aria-modal="true"><div className="relative my-auto w-full max-w-2xl rounded-[2rem] bg-white p-7 shadow-2xl sm:p-9"><button type="button" onClick={() => setSelectedActivity(null)} className="absolute right-5 top-5 rounded-full p-2 text-slate-400 hover:bg-slate-100" aria-label="Close">×</button><p className="text-xs font-bold uppercase tracking-[0.2em] text-ocean">{selectedActivity.type === 'race' ? text.race : text.practice}</p><h2 className="mt-2 pr-8 font-display text-3xl font-extrabold tracking-[-0.06em] text-ink">{selectedActivity.name || selectedActivity.track_name || text.practice}</h2><p className="mt-2 text-sm text-slate-500">{selectedActivity.track_name || '—'} · {selectedActivity.activityAt ? new Date(selectedActivity.activityAt).toLocaleString(language === 'id' ? 'id-ID' : 'en-US') : '—'}</p><div className="mt-6 grid grid-cols-3 gap-3"><div className="rounded-2xl bg-mist p-3"><p className="text-[10px] font-bold uppercase text-slate-400">{text.totalLaps}</p><p className="mt-1 font-display text-2xl font-extrabold text-ink">{activityLaps(selectedActivity).length}</p></div><div className="rounded-2xl bg-mist p-3"><p className="text-[10px] font-bold uppercase text-slate-400">{text.bestLap}</p><p className="mt-1 font-mono text-lg font-extrabold text-ink">{formatLap(Math.min(...(activityLaps(selectedActivity).length ? activityLaps(selectedActivity) : [0])))}</p></div><div className="rounded-2xl bg-mist p-3"><p className="text-[10px] font-bold uppercase text-slate-400">{text.visibility}</p><p className="mt-1 text-sm font-extrabold text-ink">{selectedActivity.type === 'practice' ? (selectedActivity.visibility === 'public' ? text.public : text.private) : text.public}</p></div></div><div className="mt-6 max-h-72 overflow-auto rounded-2xl border border-slate-200"><table className="w-full text-left text-sm"><thead className="sticky top-0 bg-slate-50 text-xs uppercase tracking-wide text-slate-400"><tr><th className="px-4 py-3">#</th><th className="px-4 py-3">{text.laps}</th><th className="px-4 py-3">{text.bestLap}</th></tr></thead><tbody className="divide-y divide-slate-100">{activityLaps(selectedActivity).map((lap, index) => <tr key={`${selectedActivity.id}-${index}`}><td className="px-4 py-2 font-bold text-slate-400">{index + 1}</td><td className="px-4 py-2 font-mono text-ink">{formatLap(lap)}</td><td className="px-4 py-2 text-slate-500">{lap === Math.min(...activityLaps(selectedActivity)) ? 'Best' : '—'}</td></tr>)}</tbody></table></div></div></div>}
 
         <section className="mt-6 rounded-[2rem] border border-blue-100 bg-white p-7 shadow-card sm:p-9">
           <div className="flex items-start gap-3">

@@ -81,6 +81,8 @@ const copy = {
     raceEmptyHint: 'Race data from the YurLaps app and web will be integrated here.',
     filterTrack: 'Filter by track', filterFrom: 'From', filterTo: 'To', newest: 'Newest', oldest: 'Oldest',
     records: 'Race best laps', archived: 'Archived', appOnlyTrack: 'Tracks are created, edited, and archived from the YurLaps Windows app.',
+    lapMatrix: 'Lap times', positionChart: 'Position progression', gapChart: 'Gap to leader', distribution: 'Lap time distribution',
+    driver: 'Driver', pos: 'POS', change: 'CHG', gap: 'GAP', laps: 'LAPS', total: 'TOTAL', bestLap: 'BEST LAP', top3: 'TOP3 AVG', p80: 'P80 AVG', consistency: 'CONSISTENCY', median: 'Median',
     raceDate: 'Race date',
     trackName: 'Track',
     location: 'Location',
@@ -181,6 +183,8 @@ const copy = {
     raceEmptyHint: 'Simpan race di aplikasi YurLaps menggunakan akun leader club ini.',
     filterTrack: 'Filter track', filterFrom: 'Dari', filterTo: 'Sampai', newest: 'Terbaru', oldest: 'Terlama',
     records: 'Best lap race', archived: 'Diarsipkan', appOnlyTrack: 'Track dibuat, diubah, dan diarsipkan dari aplikasi YurLaps Windows.',
+    lapMatrix: 'Waktu lap', positionChart: 'Pergerakan posisi', gapChart: 'Gap ke leader', distribution: 'Distribusi waktu lap',
+    driver: 'Pembalap', pos: 'POS', change: 'CHG', gap: 'GAP', laps: 'LAP', total: 'TOTAL', bestLap: 'BEST LAP', top3: 'RATA2 TOP3', p80: 'RATA2 P80', consistency: 'KONSISTENSI', median: 'Median',
     raceDate: 'Tanggal race',
     trackName: 'Track',
     location: 'Lokasi',
@@ -298,6 +302,88 @@ function exportRaceCsv(race) {
   anchor.download = `${race.name || 'race'}-results.csv`
   anchor.click()
   URL.revokeObjectURL(url)
+}
+
+function formatLap(ms) {
+  if (ms === null || ms === undefined || !Number.isFinite(Number(ms))) return '—'
+  const value = Number(ms)
+  return `${Math.floor(value / 60000)}:${String(Math.floor(value / 1000) % 60).padStart(2, '0')}.${String(Math.round(value % 1000)).padStart(3, '0')}`
+}
+
+function formatGap(gap) {
+  if (!gap) return '—'
+  if (gap.laps) return `+${gap.laps} lap`
+  return `+${(Number(gap.ms || 0) / 1000).toFixed(3)}s`
+}
+
+function raceReportRows(race) {
+  const rows = (Array.isArray(race?.results) ? race.results : []).map((row, index) => {
+    const laps = (Array.isArray(row.laps) ? row.laps : (Array.isArray(row.laps_ms) ? row.laps_ms : [])).map(Number).filter(Number.isFinite)
+    const ordered = [...laps].sort((a, b) => a - b)
+    const mean = laps.length ? laps.reduce((sum, value) => sum + value, 0) / laps.length : null
+    const variance = mean ? laps.reduce((sum, value) => sum + (value - mean) ** 2, 0) / laps.length : 0
+    const sigma = Math.sqrt(variance)
+    return {
+      ...row,
+      pos: row.pos || index + 1,
+      laps,
+      n_lap: row.n_lap ?? laps.length,
+      best_ms: row.best_ms ?? (ordered[0] ?? null),
+      total_ms: row.total_ms ?? (laps.length ? laps.reduce((sum, value) => sum + value, 0) : null),
+      top3_ms: row.top3_ms ?? (ordered.length >= 3 ? ordered.slice(0, 3).reduce((sum, value) => sum + value, 0) / 3 : null),
+      p80_ms: row.p80_ms ?? (ordered.length ? ordered.slice(0, Math.max(1, Math.ceil(ordered.length * 0.8))).reduce((sum, value) => sum + value, 0) / Math.max(1, Math.ceil(ordered.length * 0.8)) : null),
+      consistency: row.consistency ?? (mean ? Math.max(0, 1 - sigma / mean) * 100 : null),
+    }
+  })
+  const maxLaps = Math.max(0, ...rows.map((row) => row.laps.length))
+  rows.forEach((row) => { row.positions = []; row.gaps = [] })
+  for (let lap = 0; lap < maxLaps; lap += 1) {
+    const cumulative = rows.map((row, index) => ({ index, value: row.laps.slice(0, lap + 1).reduce((sum, value) => sum + value, 0) })).filter((item) => rows[item.index].laps.length > lap).sort((a, b) => a.value - b.value)
+    const leader = cumulative[0]?.value || 0
+    cumulative.forEach((item, position) => {
+      rows[item.index].positions[lap] = position + 1
+      rows[item.index].gaps[lap] = (item.value - leader) / 1000
+    })
+  }
+  const leader = rows[0]
+  rows.forEach((row) => {
+    if (row.gap_leader == null && leader && row !== leader && row.n_lap && leader.n_lap) {
+      row.gap_leader = row.n_lap === leader.n_lap
+        ? { ms: (row.total_ms || 0) - (leader.total_ms || 0) }
+        : { laps: leader.n_lap - row.n_lap }
+    }
+  })
+  return rows
+}
+
+function RaceMiniChart({ rows, type }) {
+  const width = 720
+  const height = 190
+  const values = rows.flatMap((row) => (type === 'position'
+    ? row.laps.map((_, index) => index + 1)
+    : row.laps.map((_, index) => row.laps.slice(0, index + 1).reduce((sum, value) => sum + value, 0) / 1000)))
+  const maxX = Math.max(1, ...rows.map((row) => row.laps.length))
+  const maxY = type === 'position' ? Math.max(1, rows.length) : Math.max(1, ...values)
+  const colors = ['#0b7cf3', '#ef7d3c', '#12a66a', '#ab59d5', '#e4b32b', '#e34c67']
+  return <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-slate-50/60 p-3">
+    <svg viewBox={`0 0 ${width} ${height}`} className="h-48 min-w-[34rem] w-full" role="img" aria-label={type === 'position' ? 'Position progression' : 'Gap progression'}>
+      <line x1="42" y1="12" x2="42" y2="166" stroke="#cbd5e1" /><line x1="42" y1="166" x2="700" y2="166" stroke="#cbd5e1" />
+      {rows.map((row, rowIndex) => {
+        const points = row.laps.map((_, index) => {
+          const x = 42 + (index / Math.max(1, maxX - 1)) * 658
+          const cumulative = row.laps.slice(0, index + 1).reduce((sum, value) => sum + value, 0) / 1000
+          const value = type === 'position' ? (row.positions?.[index] || row.pos || rowIndex + 1) : (row.gaps?.[index] ?? cumulative)
+          const yValue = type === 'position' ? value : value
+          const y = type === 'position' ? 12 + ((yValue - 1) / Math.max(1, maxY - 1)) * 154 : 166 - (yValue / maxY) * 154
+          return `${x},${y}`
+        }).join(' ')
+        return <polyline key={row.uid || row.id || rowIndex} points={points} fill="none" stroke={colors[rowIndex % colors.length]} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+      })}
+    </svg>
+    <div className="flex flex-wrap gap-x-4 gap-y-1 px-2 text-[11px] font-semibold text-slate-500">
+      {rows.map((row, index) => <span key={row.uid || row.id || index} className="inline-flex items-center gap-1.5"><i className="h-2 w-2 rounded-full" style={{ backgroundColor: colors[index % colors.length] }} />{row.nick || row.name || `Driver ${index + 1}`}</span>)}
+    </div>
+  </div>
 }
 
 export default function ClubDashboardPage({
@@ -522,12 +608,27 @@ export default function ClubDashboardPage({
     .sort((a, b) => raceFilter.order === 'oldest'
       ? new Date(a.raced_at || 0) - new Date(b.raced_at || 0)
       : new Date(b.raced_at || 0) - new Date(a.raced_at || 0))
-  const raceRecords = tracks.map((track) => {
-    const laps = races.flatMap((race) => (race.track_name === track.name ? (race.results || []) : []))
-      .flatMap((row) => Array.isArray(row.laps) ? row.laps : [])
-      .map(Number).filter((value) => Number.isFinite(value) && value > 0)
-    return { ...track, best: laps.length ? Math.min(...laps) : null }
-  }).filter((track) => track.best).sort((a, b) => a.best - b.best).slice(0, 10)
+  const lapRecordsByTrack = races.reduce((groups, race) => {
+    const trackName = race.track_name || 'Track tanpa nama'
+    const rows = Array.isArray(race.results) ? race.results : []
+    rows.forEach((row) => {
+      const laps = Array.isArray(row.laps) ? row.laps : (Array.isArray(row.laps_ms) ? row.laps_ms : [])
+      laps.map(Number).filter((value) => Number.isFinite(value) && value > 0).forEach((lap, lapIndex) => {
+        if (!groups[trackName]) groups[trackName] = []
+        groups[trackName].push({ lap, driver: row.nick || row.name || 'Driver', race: race.name, date: race.raced_at, lapIndex: lapIndex + 1 })
+      })
+    })
+    return groups
+  }, {})
+  Object.keys(lapRecordsByTrack).forEach((trackName) => {
+    lapRecordsByTrack[trackName].sort((a, b) => a.lap - b.lap)
+    let rank = 0
+    lapRecordsByTrack[trackName].forEach((entry, index) => {
+      if (index === 0 || entry.lap !== lapRecordsByTrack[trackName][index - 1].lap) rank = index + 1
+      entry.rank = rank
+    })
+    lapRecordsByTrack[trackName] = lapRecordsByTrack[trackName].slice(0, 10)
+  })
 
   const handleReview = async (member, approve) => {
     if (!activeClubId) return
@@ -950,11 +1051,9 @@ export default function ClubDashboardPage({
                 ))}
               </ul>
             )}
-            {raceRecords.length > 0 && <div className="mt-7 rounded-2xl border border-amber-100 bg-amber-50/60 p-4">
+            {Object.keys(lapRecordsByTrack).length > 0 && <div className="mt-7 rounded-2xl border border-amber-100 bg-amber-50/60 p-4">
               <h3 className="flex items-center gap-2 text-sm font-extrabold uppercase tracking-wide text-amber-700"><Trophy size={16} /> {text.records}</h3>
-              <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                {raceRecords.map((record, index) => <div key={record.id} className="flex items-center justify-between rounded-xl bg-white px-3 py-2 text-sm"><span className="font-bold text-ink">#{index + 1} {record.name}</span><span className="font-mono font-bold text-amber-700">{(record.best / 1000).toFixed(3)}s</span></div>)}
-              </div>
+              <div className="mt-3 grid gap-4 lg:grid-cols-2">{Object.entries(lapRecordsByTrack).map(([trackName, records]) => <div key={trackName} className="overflow-hidden rounded-xl bg-white"><div className="border-b border-slate-100 px-3 py-2 text-sm font-extrabold text-ink">{trackName}</div><div className="divide-y divide-slate-100">{records.map((record, index) => <div key={`${record.driver}-${record.lap}-${index}`} className="flex items-center gap-3 px-3 py-2 text-xs"><span className={`grid h-6 w-6 place-items-center rounded-full font-extrabold ${record.rank === 1 ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>{record.rank}</span><span className="min-w-0 flex-1 truncate font-bold text-ink">{record.driver}</span><span className="font-mono font-bold text-ocean">{formatLap(record.lap)}</span></div>)}</div></div>)}</div>
             </div>}
           </section>
         ) : tab === 'member' ? (
@@ -1339,39 +1438,45 @@ export default function ClubDashboardPage({
               </div>
             </div>
 
-            <h3 className="mt-6 text-sm font-extrabold uppercase tracking-wide text-slate-500">
-              {text.results}
-            </h3>
-            {Array.isArray(selectedRace.results) && selectedRace.results.length > 0 ? (
-              <div className="mt-3 max-h-72 overflow-auto rounded-2xl border border-slate-200">
-                <table className="w-full min-w-[30rem] text-left text-sm">
-                  <thead className="sticky top-0 bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
-                    <tr>
-                      {Object.keys(selectedRace.results[0]).map((column) => (
-                        <th key={column} className="px-3 py-2 font-bold">
-                          {column.replaceAll('_', ' ')}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {selectedRace.results.map((row, index) => (
-                      <tr key={index}>
-                        {Object.keys(selectedRace.results[0]).map((column) => (
-                          <td key={column} className="px-3 py-2 text-slate-600">
-                            {resultValue(row[column])}
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <p className="mt-3 rounded-xl bg-slate-50 px-4 py-4 text-sm text-slate-500">
-                {text.noResults}
-              </p>
-            )}
+            {(() => {
+              const reportRows = raceReportRows(selectedRace)
+              const allLaps = reportRows.flatMap((row) => row.laps).filter((value) => Number.isFinite(value))
+              const sortedLaps = [...allLaps].sort((a, b) => a - b)
+              const median = sortedLaps.length ? (sortedLaps[Math.floor((sortedLaps.length - 1) / 2)] + sortedLaps[Math.ceil((sortedLaps.length - 1) / 2)]) / 2 : null
+              return reportRows.length > 0 ? <div className="mt-6 space-y-6">
+                <div>
+                  <h3 className="text-sm font-extrabold uppercase tracking-wide text-slate-500">{text.results}</h3>
+                  <div className="mt-3 overflow-auto rounded-2xl border border-slate-200">
+                    <table className="w-full min-w-[58rem] text-left text-xs">
+                      <thead className="bg-slate-50 uppercase tracking-wide text-slate-400"><tr>
+                        {[text.pos, text.change, text.driver, text.gap, text.laps, text.total, text.bestLap, text.top3, text.p80, text.consistency].map((label) => <th key={label} className="px-3 py-2.5 font-bold">{label}</th>)}
+                      </tr></thead>
+                      <tbody className="divide-y divide-slate-100">{reportRows.map((row, index) => <tr key={row.uid || row.id || index}>
+                        <td className="px-3 py-2.5 font-extrabold text-ocean">{row.pos}</td>
+                        <td className="px-3 py-2.5 font-semibold text-slate-500">{row.change > 0 ? `+${row.change}` : row.change ?? '—'}</td>
+                        <td className="px-3 py-2.5 font-bold text-ink">{row.nick || row.name || `Driver ${index + 1}`}</td>
+                        <td className="px-3 py-2.5 font-semibold text-slate-500">{formatGap(row.gap_leader)}</td>
+                        <td className="px-3 py-2.5 text-slate-600">{row.n_lap}</td>
+                        <td className="px-3 py-2.5 font-mono text-slate-600">{formatLap(row.total_ms)}</td>
+                        <td className="px-3 py-2.5 font-mono font-bold text-ocean">{formatLap(row.best_ms)}</td>
+                        <td className="px-3 py-2.5 font-mono text-slate-600">{formatLap(row.top3_ms)}</td>
+                        <td className="px-3 py-2.5 font-mono text-slate-600">{formatLap(row.p80_ms)}</td>
+                        <td className="px-3 py-2.5 font-semibold text-slate-600">{row.consistency == null ? '—' : `${Number(row.consistency).toFixed(1)}%`}</td>
+                      </tr>)}</tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <div>
+                  <h3 className="text-sm font-extrabold uppercase tracking-wide text-slate-500">{text.lapMatrix}</h3>
+                  <div className="mt-3 max-h-64 overflow-auto rounded-2xl border border-slate-200"><table className="w-full min-w-[34rem] text-left text-xs"><thead className="sticky top-0 bg-slate-50 text-slate-400"><tr><th className="px-3 py-2">{text.driver}</th>{Array.from({ length: Math.max(...reportRows.map((row) => row.laps.length), 0) }, (_, index) => <th key={index} className="px-3 py-2">L{index + 1}</th>)}</tr></thead><tbody className="divide-y divide-slate-100">{reportRows.map((row, index) => <tr key={row.uid || row.id || index}><td className="px-3 py-2 font-bold text-ink">{row.nick || row.name || `Driver ${index + 1}`}</td>{row.laps.map((lap, lapIndex) => <td key={lapIndex} className={`px-3 py-2 font-mono ${lap === row.best_ms ? 'font-bold text-ocean' : 'text-slate-600'}`}>{formatLap(lap)}</td>)}</tr>)}</tbody></table></div>
+                </div>
+
+                <div><h3 className="text-sm font-extrabold uppercase tracking-wide text-slate-500">{text.positionChart}</h3><div className="mt-3"><RaceMiniChart rows={reportRows} type="position" /></div></div>
+                <div><h3 className="text-sm font-extrabold uppercase tracking-wide text-slate-500">{text.gapChart}</h3><div className="mt-3"><RaceMiniChart rows={reportRows} type="gap" /></div></div>
+                <div><h3 className="text-sm font-extrabold uppercase tracking-wide text-slate-500">{text.distribution}</h3><div className="mt-3 grid gap-3 sm:grid-cols-2">{reportRows.map((row, index) => { const fastest = row.laps.length ? Math.min(...row.laps) : null; const slowest = row.laps.length ? Math.max(...row.laps) : null; return <div key={row.uid || row.id || index} className="rounded-2xl bg-mist/60 p-4"><div className="flex items-center justify-between gap-2"><span className="truncate text-sm font-bold text-ink">{row.nick || row.name || `Driver ${index + 1}`}</span><span className="text-xs font-semibold text-slate-500">{row.n_lap} laps</span></div><div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-200"><span className="block h-full rounded-full bg-ocean" style={{ width: `${fastest && slowest ? Math.max(8, Math.min(100, (fastest / slowest) * 100)) : 0}%` }} /></div><div className="mt-2 flex justify-between font-mono text-[11px] text-slate-500"><span>{formatLap(fastest)}</span><span>{text.median}: {formatLap(row.rata_ms || median)}</span><span>{formatLap(slowest)}</span></div></div> })}</div></div>
+              </div> : <p className="mt-3 rounded-xl bg-slate-50 px-4 py-4 text-sm text-slate-500">{text.noResults}</p>
+            })()}
 
             <div className="mt-6 flex flex-wrap gap-2">
               <button

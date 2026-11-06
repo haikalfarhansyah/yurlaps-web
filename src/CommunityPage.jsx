@@ -426,8 +426,8 @@ export default function CommunityPage({ session, language, onBack, onRequireLogi
                 className="flex flex-col rounded-[2rem] border border-blue-100 bg-white p-6 shadow-card"
               >
                 <div className="flex items-start justify-between gap-3">
-                  <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-mist font-display text-lg font-extrabold text-ocean">
-                    {initialsOf(club.name)}
+                  <span className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-2xl bg-mist font-display text-lg font-extrabold text-ocean">
+                    {club.avatar_url ? <img src={club.avatar_url} alt={club.name} className="h-full w-full object-cover" /> : initialsOf(club.name)}
                   </span>
                   <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-ocean">
                     <Users size={12} /> {club.member_count} {text.members}

@@ -6,6 +6,8 @@ alter table public.club_tracks
   add column if not exists note text not null default '',
   add column if not exists best_ms integer check (best_ms > 0),
   add column if not exists holder text,
+  add column if not exists min_lap_ms integer not null default 1500 check (min_lap_ms >= 100),
+  add column if not exists is_active boolean not null default false,
   add column if not exists revision bigint not null default 1,
   add column if not exists updated_at timestamptz not null default now(),
   add column if not exists deleted_at timestamptz,
@@ -95,11 +97,11 @@ begin
       return jsonb_build_object('conflict',true,'current',current_row);
     end if;
     if current_row is null then
-      insert into public.club_tracks (id,club_id,created_by,last_mutation_id,deleted_at,name,address,width_m,loop_width_m,note,best_ms,holder)
-      values (p_id,p_club_id,auth.uid(),p_mutation_id,case when p_deleted then now() end,btrim(p_data->>'name'),coalesce(p_data->>'address',''),(p_data->>'width_m')::double precision,(p_data->>'loop_width_m')::double precision,coalesce(p_data->>'note',''),(p_data->>'best_ms')::integer,p_data->>'holder')
+      insert into public.club_tracks (id,club_id,created_by,last_mutation_id,deleted_at,name,address,width_m,loop_width_m,note,best_ms,holder,min_lap_ms,is_active)
+      values (p_id,p_club_id,auth.uid(),p_mutation_id,case when p_deleted then now() end,btrim(p_data->>'name'),coalesce(p_data->>'address',''),(p_data->>'width_m')::double precision,(p_data->>'loop_width_m')::double precision,coalesce(p_data->>'note',''),(p_data->>'best_ms')::integer,p_data->>'holder',coalesce((p_data->>'min_lap_ms')::integer,1500),coalesce((p_data->>'is_active')::boolean,false))
       returning to_jsonb(club_tracks.*) into current_row;
     else
-      update public.club_tracks set name=btrim(p_data->>'name'),address=coalesce(p_data->>'address',''),width_m=(p_data->>'width_m')::double precision,loop_width_m=(p_data->>'loop_width_m')::double precision,note=coalesce(p_data->>'note',''),best_ms=(p_data->>'best_ms')::integer,holder=p_data->>'holder',
+      update public.club_tracks set name=btrim(p_data->>'name'),address=coalesce(p_data->>'address',''),width_m=(p_data->>'width_m')::double precision,loop_width_m=(p_data->>'loop_width_m')::double precision,note=coalesce(p_data->>'note',''),best_ms=(p_data->>'best_ms')::integer,holder=p_data->>'holder',min_lap_ms=coalesce((p_data->>'min_lap_ms')::integer,1500),is_active=coalesce((p_data->>'is_active')::boolean,false),
         last_mutation_id=p_mutation_id, deleted_at=case when p_deleted then now() end
       where id=p_id returning to_jsonb(club_tracks.*) into current_row;
     end if;
