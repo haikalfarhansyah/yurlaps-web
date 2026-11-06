@@ -17,12 +17,14 @@ import DashboardPage from './DashboardPage'
 import CommunityPage from './CommunityPage'
 import ClubDashboardPage from './ClubDashboardPage'
 import DesktopLoginPage from './DesktopLoginPage'
+import DownloadPage from './DownloadPage'
 
 const gallery = [
   { src: '/gallery-transponder-size.png', alt: 'YURLAPS Transponder size comparison' },
 ]
 
 const pageFromPath = (path = window.location.pathname) => {
+  if (path === '/download') return 'download'
   if (path === '/desktop-login') return 'desktop-login'
   if (path === '/login') return 'login'
   if (path === '/dashboard') return 'dashboard'
@@ -591,6 +593,7 @@ function App() {
           {session ? <button onClick={handleSignOut} className="hidden items-center gap-2 rounded-full bg-slate-100 px-4 py-2.5 text-sm font-semibold text-ocean transition hover:bg-blue-100 md:flex">{session.user.email} · {text.logout}</button> : <button onClick={openLogin} className="hidden items-center gap-2 rounded-full bg-ocean px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#1855db] md:flex">{text.login} <LogIn size={16} /></button>}
           <button onClick={() => setMenuOpen(!menuOpen)} className="rounded-full p-2 text-slate-700 hover:bg-blue-50 md:hidden" aria-label="Toggle menu">{menuOpen ? <X size={21} /> : <Menu size={21} />}</button>
         </nav>
+        <a href="/download" className="block border-t border-blue-100 px-5 py-2 text-center text-sm font-bold text-ocean">Download YurLaps untuk Windows</a>
         {menuOpen && <div className="relative z-10 border-t border-blue-100 bg-white/95 px-5 py-3 backdrop-blur-md md:hidden">{[['home', text.home], ['products', text.product], ['gallery', text.gallery], ['community', text.community], ['contact', text.contact]].map(([id, label]) => <button key={id} onClick={() => (id === 'community' ? openCommunity() : scrollTo(id))} className="block w-full rounded-xl px-3 py-3 text-left text-sm font-bold text-slate-600 hover:bg-blue-50">{label}</button>)}{session ? <button onClick={handleSignOut} className="mt-2 flex w-full items-center justify-center rounded-xl bg-slate-100 px-4 py-3 text-sm font-bold text-ocean">{text.logout}</button> : <button onClick={openLogin} className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-ocean px-4 py-3 text-sm font-bold text-white">{text.login} <LogIn size={16} /></button>}<div className="mt-2 flex gap-2 border-t border-blue-100 pt-3">{[['en', 'EN'], ['id', 'ID']].map(([value, label]) => <button key={value} onClick={() => setLanguage(value)} className={`rounded-full px-4 py-2 text-xs font-bold ${language === value ? 'bg-ocean text-white' : 'bg-blue-50 text-slate-500'}`}>{label}</button>)}</div></div>}
         {session && currentPage !== 'dashboard' && currentPage !== 'club' && (
           <div className="relative z-[5] border-t border-blue-100 bg-mist/80">
@@ -627,7 +630,9 @@ function App() {
         )}
       </header>
 
-      {currentPage === 'desktop-login' ? (
+      {currentPage === 'download' ? (
+        <DownloadPage />
+      ) : currentPage === 'desktop-login' ? (
         <DesktopLoginPage LoginPage={LoginPage} text={text} onBack={goHome} />
       ) : currentPage === 'login' ? (
         <LoginPage text={text} onBack={goHome} onSignedIn={handleSignedIn} />
@@ -731,6 +736,7 @@ function App() {
           </div>
         </section>
 
+        <section className="mx-auto max-w-6xl px-5 py-8 sm:px-8"><div className="rounded-3xl bg-blue-50 p-8"><h2 className="font-display text-3xl font-bold">YurLaps untuk Windows</h2><p className="mt-3 text-slate-600">Timing offline, race, dan sinkronisasi club dalam satu aplikasi.</p><a href="/download" className="mt-5 inline-block rounded-xl bg-ocean px-5 py-3 font-bold text-white">Download aplikasi</a></div></section>
         <section id="gallery" className="mx-auto max-w-6xl px-5 py-20 sm:px-8 lg:py-28">
           <div className="max-w-2xl"><p className="mb-4 text-xs font-bold uppercase tracking-[0.2em] text-ocean">{text.gallery}</p><h2 className="font-display text-4xl font-extrabold tracking-[-0.07em] sm:text-6xl">{text.galleryTitle}</h2><p className="mt-5 text-lg leading-8 text-slate-500">{text.galleryText}</p></div>
           <div className="mt-12"><img src={gallery[0].src} alt={gallery[0].alt} className="h-auto max-h-[42rem] w-full rounded-[2rem] object-contain" /></div>
