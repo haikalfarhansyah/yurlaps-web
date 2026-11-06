@@ -86,3 +86,27 @@ Configure the same URLs under **Authentication → URL Configuration**:
 ## Login and registration CAPTCHA
 
 CAPTCHA is required for both login and registration. Create a Cloudflare Turnstile widget and set its site key as `VITE_TURNSTILE_SITE_KEY` in `.env.local` and Vercel. Add the same hostname(s) to the Turnstile widget configuration. Then enable CAPTCHA in **Supabase → Authentication → Bot and Abuse Protection** and enter the Turnstile secret key there. The secret key must never be added to Vite environment variables or frontend code.
+
+## Desktop integration (requires matching YurLaps desktop release)
+
+Apply the migration in `supabase/migrations/*_desktop_club_sync.sql` after the
+existing account and community schema, before deploying this website release.
+It adds versioned track metadata, club presets, soft deletions and leader-only
+RPCs for desktop synchronization and idempotent race uploads. Existing
+membership and transponder ownership policies remain in force.
+
+The desktop opens `/desktop-login` with a random state and a loopback callback.
+This page uses the website's existing CAPTCHA configuration and creates an
+independent desktop session. Tokens are POSTed only to `127.0.0.1`, never put in
+the URL or stored in this page's browser storage. The desktop must validate the
+state, origin, expiration and returned Supabase user before accepting a session.
+Do not send a link with a callback to another person; start login from the app.
+
+Club race results refresh every 15 seconds while the dashboard is visible.
+Track deletion now keeps a tombstone so offline clients can observe deletions.
+The desktop should retain local changes on revision conflicts and request an
+operator choice, never silently overwrite them.
+
+Validation: `npm test`, `npm run test:db` (isolated PGlite database), `npm run build`.
+
+Deployment note: the desktop sync migration was applied and verified on the connected YurLaps Supabase project on 2026-11-06. Do not manually re-run it on that project. Other environments must apply it before deploying this release.

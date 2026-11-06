@@ -16,12 +16,14 @@ import { supabase } from './lib/supabase'
 import DashboardPage from './DashboardPage'
 import CommunityPage from './CommunityPage'
 import ClubDashboardPage from './ClubDashboardPage'
+import DesktopLoginPage from './DesktopLoginPage'
 
 const gallery = [
   { src: '/gallery-transponder-size.png', alt: 'YURLAPS Transponder size comparison' },
 ]
 
 const pageFromPath = (path = window.location.pathname) => {
+  if (path === '/desktop-login') return 'desktop-login'
   if (path === '/login') return 'login'
   if (path === '/dashboard') return 'dashboard'
   if (path === '/community') return 'community'
@@ -34,7 +36,7 @@ const clubIdFromPath = (path = window.location.pathname) => {
   return path.split('/')[2] || null
 }
 
-function LoginPage({ text, onBack, onSignedIn }) {
+function LoginPage({ text, onBack, onSignedIn, client = supabase, allowRegistration = true }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -88,7 +90,7 @@ function LoginPage({ text, onBack, onSignedIn }) {
 
   const handleSubmit = async (event) => {
     event.preventDefault()
-    if (!supabase) {
+    if (!client) {
       setError(text.supabaseMissing)
       return
     }
@@ -103,12 +105,12 @@ function LoginPage({ text, onBack, onSignedIn }) {
     setLoading(true)
     setError('')
     const result = mode === 'login'
-      ? await supabase.auth.signInWithPassword({
+      ? await client.auth.signInWithPassword({
           email: email.trim(),
           password,
           options: { captchaToken },
         })
-      : await supabase.auth.signUp({
+      : await client.auth.signUp({
           email: email.trim(),
           password,
           options: {
@@ -125,7 +127,7 @@ function LoginPage({ text, onBack, onSignedIn }) {
       return
     }
     if (mode === 'register' && !result.data.session) {
-      const signInResult = await supabase.auth.signInWithPassword({
+      const signInResult = await client.auth.signInWithPassword({
         email: email.trim(),
         password,
         options: { captchaToken },
@@ -186,9 +188,9 @@ function LoginPage({ text, onBack, onSignedIn }) {
               {loading ? text.loading : mode === 'login' ? text.loginSubmit : text.registerSubmit} <LogIn size={17} />
             </button>
           </form>
-          <button type="button" onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setError(''); resetCaptcha() }} className="mt-6 w-full text-center text-sm font-bold text-ocean transition hover:text-[#1855db]">
+          {allowRegistration && <button type="button" onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setError(''); resetCaptcha() }} className="mt-6 w-full text-center text-sm font-bold text-ocean transition hover:text-[#1855db]">
             {mode === 'login' ? text.noAccount : text.haveAccount}
-          </button>
+          </button>}
         </div>
       </div>
     </main>
@@ -625,7 +627,9 @@ function App() {
         )}
       </header>
 
-      {currentPage === 'login' ? (
+      {currentPage === 'desktop-login' ? (
+        <DesktopLoginPage LoginPage={LoginPage} text={text} onBack={goHome} />
+      ) : currentPage === 'login' ? (
         <LoginPage text={text} onBack={goHome} onSignedIn={handleSignedIn} />
       ) : currentPage === 'dashboard' ? (
         session ? (

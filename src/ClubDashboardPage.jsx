@@ -1,3 +1,4 @@
+import { resultValue, csvValue } from './lib/raceValues'
 import { useEffect, useState } from 'react'
 import {
   ArrowLeft,
@@ -77,7 +78,7 @@ const copy = {
     noDescription: 'No description yet.',
     noAddress: 'No address yet.',
     raceTitle: 'Race results',
-    raceSubtitle: 'Results from the YurLaps app will appear here after integration.',
+    raceSubtitle: 'Saved desktop race results appear here after synchronization.',
     raceEmpty: 'No race results yet.',
     raceEmptyHint: 'Race data from the YurLaps app and web will be integrated here.',
     raceDate: 'Race date',
@@ -175,9 +176,9 @@ const copy = {
     noDescription: 'Belum ada deskripsi.',
     noAddress: 'Belum ada alamat.',
     raceTitle: 'Hasil race',
-    raceSubtitle: 'Hasil dari aplikasi YurLaps akan muncul di sini setelah integrasi.',
+    raceSubtitle: 'Hasil race tersimpan dari aplikasi YurLaps muncul di sini setelah sinkronisasi.',
     raceEmpty: 'Belum ada hasil race.',
-    raceEmptyHint: 'Data race dari aplikasi dan web YurLaps akan diintegrasikan di sini.',
+    raceEmptyHint: 'Simpan race di aplikasi YurLaps menggunakan akun leader club ini.',
     raceDate: 'Tanggal race',
     trackName: 'Track',
     location: 'Lokasi',
@@ -275,11 +276,6 @@ function formatDate(value, language) {
   }
 }
 
-function csvValue(value) {
-  const text = value === null || value === undefined ? '' : String(value)
-  return `"${text.replaceAll('"', '""')}"`
-}
-
 function exportRaceCsv(race) {
   const rows = Array.isArray(race.results) ? race.results : []
   if (!rows.length) return
@@ -330,6 +326,31 @@ export default function ClubDashboardPage({
   const [tracks, setTracks] = useState([])
   const [races, setRaces] = useState([])
   const [selectedRace, setSelectedRace] = useState(null)
+
+  useEffect(() => {
+    if (!activeClubId || !user?.id) return undefined
+    let active = true
+    let pending = false
+    async function refreshResults() {
+      if (pending || document.visibilityState === 'hidden') return
+      pending = true
+      try {
+        const rows = await fetchClubRaces(activeClubId)
+        if (active) setRaces(rows)
+      } catch {
+        // Keep the last successful list while disconnected.
+      } finally { pending = false }
+    }
+    const timer = window.setInterval(refreshResults, 15000)
+    window.addEventListener('focus', refreshResults)
+    window.addEventListener('online', refreshResults)
+    return () => {
+      active = false
+      window.clearInterval(timer)
+      window.removeEventListener('focus', refreshResults)
+      window.removeEventListener('online', refreshResults)
+    }
+  }, [activeClubId, user?.id])
 
   const [profileForm, setProfileForm] = useState({ name: '', description: '', address: '' })
   const [profileSaving, setProfileSaving] = useState(false)
@@ -1397,7 +1418,7 @@ export default function ClubDashboardPage({
                       <tr key={index}>
                         {Object.keys(selectedRace.results[0]).map((column) => (
                           <td key={column} className="px-3 py-2 text-slate-600">
-                            {row[column] ?? '—'}
+                            {resultValue(row[column])}
                           </td>
                         ))}
                       </tr>

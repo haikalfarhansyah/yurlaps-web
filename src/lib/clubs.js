@@ -268,6 +268,7 @@ export async function fetchClubTracks(clubId) {
     .from('club_tracks')
     .select('*')
     .eq('club_id', clubId)
+    .is('deleted_at', null)
     .order('created_at', { ascending: true })
   if (error) throw error
   return data || []
@@ -291,7 +292,7 @@ export async function addClubTrack(clubId, userId, values) {
 
 export async function deleteClubTrack(trackId) {
   const client = requireClient()
-  const { error } = await client.from('club_tracks').delete().eq('id', trackId)
+  const { error } = await client.from('club_tracks').update({ deleted_at: new Date().toISOString() }).eq('id', trackId)
   if (error) throw error
 }
 
