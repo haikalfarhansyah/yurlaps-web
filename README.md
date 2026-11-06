@@ -11,9 +11,9 @@ npm run dev
 
 ## Windows download and updates
 
-The `/download` page reads the latest stable GitHub Release and exposes only the
-versioned `YurLaps-Setup-<version>.exe` asset. Drafts, prereleases, missing assets,
-and malformed release metadata are hidden. Installed Windows builds can check,
+The `/download` page reads the latest stable release manifest from the website
+release bucket and exposes only the versioned `YurLaps-Setup-<version>.exe` asset.
+Installed Windows builds can check,
 download, and install a release from the in-app **Pembaruan** menu without an
 uninstall; the app restarts briefly while program files are replaced.
 

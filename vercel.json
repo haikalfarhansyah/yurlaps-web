@@ -1,5 +1,6 @@
 {
   "rewrites": [
+    { "source": "/releases/:path*", "destination": "https://eottbwdcxrhgxadwnlmy.supabase.co/storage/v1/object/public/yurlaps-releases/:path*" },
     { "source": "/(.*)", "destination": "/" }
   ]
 }

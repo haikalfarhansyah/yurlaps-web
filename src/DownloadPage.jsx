@@ -7,7 +7,7 @@ export default function DownloadPage() {
   const [status, setStatus] = useState('Memeriksa versi terbaru...')
   useEffect(() => {
     const controller = new AbortController()
-    fetch('https://api.github.com/repos/Khasya207/Yurlapsss/releases/latest', { signal: controller.signal })
+    fetch('/releases/manifest.json', { signal: controller.signal, cache: 'no-store' })
       .then(r => { if (!r.ok) throw new Error('Belum dapat memuat rilis Windows.'); return r.json() })
       .then(data => { const value = getWindowsRelease(data); setRelease(value); setStatus(value ? '' : 'Installer Windows belum tersedia.') })
       .catch(e => { if (e.name !== 'AbortError') setStatus('Belum dapat memuat rilis. Periksa daftar rilis atau coba lagi nanti.') })
@@ -23,7 +23,7 @@ export default function DownloadPage() {
           {release ? <><p className="mt-4 text-sm text-slate-600">Versi {release.version} · {new Date(release.date).toLocaleDateString('id-ID')} · {(release.size / 1048576).toFixed(1)} MB</p>
             <a href={release.url} className="mt-6 inline-flex items-center gap-2 rounded-2xl bg-ocean px-6 py-4 font-bold text-white"><Download size={20} /> Download untuk Windows</a>
           </> : <p className="mt-5 text-slate-600" role="status">{status}</p>}
-          <a href="https://github.com/Khasya207/Yurlapsss/releases" target="_blank" rel="noreferrer" className="mt-5 flex items-center gap-2 text-sm font-bold text-ocean">Semua versi dan catatan rilis <ArrowUpRight size={16} /></a>
+          <a href="/releases/" className="mt-5 flex items-center gap-2 text-sm font-bold text-ocean">Lihat file rilis YurLaps <ArrowUpRight size={16} /></a>
         </div>
       </div>
       <div className="rounded-3xl border border-slate-200 bg-white p-8">
