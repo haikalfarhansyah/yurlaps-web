@@ -166,13 +166,72 @@ function activityLaps(item) {
     if (Array.isArray(source)) {
       return source.flatMap((entry) => {
         if (typeof entry === 'number' || typeof entry === 'string') return [Number(entry)]
-        return entry?.lap_ms || entry?.laps || []
+        if (Number.isFinite(Number(entry?.timeMs))) return [Number(entry.timeMs)]
+        if (Number.isFinite(Number(entry?.time_ms))) return [Number(entry.time_ms)]
+        return Array.isArray(entry?.laps) ? entry.laps : []
       }).map(Number).filter(Number.isFinite)
     }
     return Object.values(source || {}).flat().map(Number).filter(Number.isFinite)
   }
   const rows = item.personal_results || item.results || []
   return rows.flatMap((row) => Array.isArray(row.laps) ? row.laps : (Array.isArray(row.laps_ms) ? row.laps_ms : (Array.isArray(row.lap_times) ? row.lap_times : []))).map(Number).filter(Number.isFinite)
+}
+
+function activityLapDetails(item) {
+  if (item.type === 'practice') {
+    const source = item.laps
+    if (Array.isArray(source)) {
+      return source.flatMap((entry) => {
+        if (typeof entry === 'number' || typeof entry === 'string') return [{ timeMs: Number(entry) }]
+        if (Number.isFinite(Number(entry?.timeMs))) return [{ ...entry, timeMs: Number(entry.timeMs) }]
+        if (Number.isFinite(Number(entry?.time_ms))) return [{ ...entry, timeMs: Number(entry.time_ms) }]
+        return (Array.isArray(entry?.laps) ? entry.laps : []).map((value) => ({ timeMs: Number(value) }))
+      }).filter((lap) => Number.isFinite(lap.timeMs))
+    }
+    return Object.values(source || {}).flat().map((value) => ({ timeMs: Number(value) })).filter((lap) => Number.isFinite(lap.timeMs))
+  }
+  const rows = item.personal_results || item.results || []
+  const row = rows[0] || {}
+  const values = Array.isArray(row.laps) ? row.laps : (Array.isArray(row.laps_ms) ? row.laps_ms : (Array.isArray(row.lap_times) ? row.lap_times : []))
+  return values.map((value) => typeof value === 'object' ? { ...value, timeMs: Number(value.timeMs ?? value.time_ms ?? value.lap_ms) } : { timeMs: Number(value) }).filter((lap) => Number.isFinite(lap.timeMs))
+}
+
+function activityMetrics(item) {
+  const laps = activityLapDetails(item)
+  const times = laps.map((lap) => lap.timeMs).filter((value) => value > 0)
+  const sorted = [...times].sort((a, b) => a - b)
+  const totalMs = times.reduce((sum, value) => sum + value, 0)
+  const mean = times.length ? totalMs / times.length : null
+  const variance = mean == null ? 0 : times.reduce((sum, value) => sum + (value - mean) ** 2, 0) / times.length
+  const sigma = Math.sqrt(variance)
+  const consecutive = times.length >= 3 ? Math.min(...times.slice(2).map((value, index) => (times[index] + times[index + 1] + value) / 3)) : null
+  const p80Count = Math.max(1, Math.ceil(sorted.length * 0.8))
+  const p80 = sorted.length ? sorted.slice(0, p80Count).reduce((sum, value) => sum + value, 0) / p80Count : null
+  const speeds = laps.map((lap) => Number(lap.speedKmh ?? lap.speed_kmh ?? lap.top_speed_kmh)).filter((value) => Number.isFinite(value) && value > 0)
+  return { laps, count: times.length, totalMs, bestMs: sorted[0] ?? null, top3Ms: sorted.length >= 3 ? (sorted[0] + sorted[1] + sorted[2]) / 3 : null, consecutiveMs: consecutive, p80Ms: p80, consistency: mean && times.length >= 2 ? Math.max(0, 1 - sigma / mean) * 100 : null, topSpeedKmh: speeds.length ? Math.max(...speeds) : null }
+}
+
+function ActivityDetail({ activity, language, text, onClose }) {
+  const metrics = activityMetrics(activity)
+  const labels = language === 'id'
+    ? { total: 'Total time', best: 'Best lap', top3: 'Top 3 avg', consecutive: 'Top 3 consecutive', p80: 'P80 avg', consistency: 'Consistency', speed: 'Top speed', lapTime: 'Lap time', delta: 'Delta best', passing: 'Passing time', private: 'Private', public: 'Public', noData: '—' }
+    : { total: 'Total time', best: 'Best lap', top3: 'Top 3 avg', consecutive: 'Top 3 consecutive', p80: 'P80 avg', consistency: 'Consistency', speed: 'Top speed', lapTime: 'Lap time', delta: 'Delta best', passing: 'Passing time', private: 'Private', public: 'Public', noData: '—' }
+  return <div className="fixed inset-0 z-[95] grid place-items-center overflow-y-auto bg-slate-950/45 px-5 py-8 backdrop-blur-sm" role="dialog" aria-modal="true">
+    <div className="relative my-auto w-full max-w-4xl rounded-[2rem] bg-white p-7 shadow-2xl sm:p-9">
+      <button type="button" onClick={onClose} className="absolute right-5 top-5 rounded-full p-2 text-slate-400 hover:bg-slate-100" aria-label="Close">×</button>
+      <p className="text-xs font-bold uppercase tracking-[0.2em] text-ocean">{activity.type === 'race' ? text.race : text.practice}</p>
+      <h2 className="mt-2 pr-8 font-display text-3xl font-extrabold tracking-[-0.06em] text-ink">{activity.name || activity.track_name || text.practice}</h2>
+      <p className="mt-2 text-sm text-slate-500">{activity.track_name || '—'} · {activity.activityAt ? new Date(activity.activityAt).toLocaleString(language === 'id' ? 'id-ID' : 'en-US') : '—'}</p>
+      <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {[[text.totalLaps, metrics.count], [labels.total, formatLap(metrics.totalMs)], [labels.best, formatLap(metrics.bestMs)], [text.visibility, activity.type === 'practice' && activity.visibility !== 'public' ? labels.private : labels.public]].map(([label, value]) => <div key={label} className="rounded-2xl bg-mist p-3"><p className="text-[10px] font-bold uppercase text-slate-400">{label}</p><p className="mt-1 font-display text-xl font-extrabold text-ink">{value}</p></div>)}
+      </div>
+      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-5">
+        {[[labels.top3, formatLap(metrics.top3Ms)], [labels.consecutive, formatLap(metrics.consecutiveMs)], [labels.p80, formatLap(metrics.p80Ms)], [labels.consistency, metrics.consistency == null ? labels.noData : `${metrics.consistency.toFixed(1)}%`], [labels.speed, metrics.topSpeedKmh == null ? labels.noData : `${metrics.topSpeedKmh.toFixed(1)} km/h`]].map(([label, value]) => <div key={label} className="rounded-2xl border border-slate-100 bg-white p-3 shadow-sm"><p className="text-[10px] font-bold uppercase text-slate-400">{label}</p><p className="mt-1 font-mono text-sm font-extrabold text-ink">{value}</p></div>)}
+      </div>
+      <div className="mt-6 max-h-80 overflow-auto rounded-2xl border border-slate-200"><table className="w-full min-w-[620px] text-left text-sm"><thead className="sticky top-0 bg-slate-50 text-xs uppercase tracking-wide text-slate-400"><tr><th className="px-4 py-3">#</th><th className="px-4 py-3">{labels.lapTime}</th><th className="px-4 py-3">{labels.delta}</th><th className="px-4 py-3">{labels.speed}</th><th className="px-4 py-3">{labels.passing}</th></tr></thead><tbody className="divide-y divide-slate-100">{metrics.laps.map((lap, index) => <tr key={`${activity.id}-${index}`}><td className="px-4 py-2 font-bold text-slate-400">{index + 1}</td><td className={`px-4 py-2 font-mono ${lap.timeMs === metrics.bestMs ? 'font-extrabold text-ocean' : 'text-ink'}`}>{formatLap(lap.timeMs)}{lap.timeMs === metrics.bestMs ? ' · BEST' : ''}</td><td className="px-4 py-2 font-mono text-slate-500">{metrics.bestMs == null ? '—' : `+${formatLap(lap.timeMs - metrics.bestMs)}`}</td><td className="px-4 py-2 font-mono text-slate-500">{Number.isFinite(Number(lap.speedKmh ?? lap.speed_kmh)) ? `${Number(lap.speedKmh ?? lap.speed_kmh).toFixed(1)} km/h` : '—'}</td><td className="px-4 py-2 text-slate-500">{lap.timestamp ? new Date(lap.timestamp).toLocaleTimeString(language === 'id' ? 'id-ID' : 'en-US') : '—'}</td></tr>)}</tbody></table></div>
+      {metrics.count < 3 && <p className="mt-3 text-xs text-slate-500">Top 3 metrics require at least three valid laps.</p>}
+    </div>
+  </div>
 }
 
 export default function DashboardPage({ session, language, onBack, onSignOut }) {
@@ -594,7 +653,7 @@ export default function DashboardPage({ session, language, onBack, onSignOut }) 
           {activityLoading ? <div className="mt-6 flex items-center justify-center gap-2 rounded-2xl border border-dashed border-slate-200 py-12 text-sm font-semibold text-slate-500"><Loader2 size={17} className="animate-spin" /> {text.loading}</div> : filteredActivities.length === 0 ? <div className="mt-6 grid place-items-center rounded-2xl border border-dashed border-slate-200 py-12 text-center"><Gauge size={25} className="text-slate-300" /><p className="mt-2 text-sm font-semibold text-slate-500">{text.noActivity}</p></div> : <div className="mt-6 overflow-hidden rounded-2xl border border-slate-200"><ul className="divide-y divide-slate-100">{filteredActivities.map((item) => { const laps = activityLaps(item); const best = laps.length ? Math.min(...laps) : null; return <li key={`${item.type}-${item.id}`} className="flex flex-wrap items-center gap-3 px-4 py-4 transition hover:bg-slate-50"><span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${item.type === 'race' ? 'bg-blue-50 text-ocean' : 'bg-amber-50 text-amber-700'}`}>{item.type === 'race' ? <Flag size={18} /> : <Gauge size={18} />}</span><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><p className="truncate text-sm font-bold text-ink">{item.name || item.track_name || text.practice}</p><span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${item.type === 'race' ? 'bg-blue-50 text-ocean' : 'bg-amber-50 text-amber-700'}`}>{item.type === 'race' ? text.race : text.practice}</span></div><p className="mt-1 flex items-center gap-1.5 text-xs text-slate-500"><CalendarDays size={13} /> {item.track_name || '—'} · {item.activityAt ? new Date(item.activityAt).toLocaleDateString(language === 'id' ? 'id-ID' : 'en-US', { dateStyle: 'medium' }) : '—'}</p></div><div className="hidden text-right sm:block"><p className="text-xs font-bold text-ink">{laps.length} {text.laps}</p><p className="font-mono text-xs text-slate-500">{formatLap(best)}</p></div>{item.type === 'practice' && <button type="button" onClick={() => togglePractice(item)} className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-2 text-[10px] font-bold text-slate-600 hover:bg-blue-50 hover:text-ocean">{item.visibility === 'public' ? <Eye size={13} /> : <EyeOff size={13} />}{item.visibility === 'public' ? text.public : text.private}</button>}<button type="button" onClick={() => setSelectedActivity(item)} className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3.5 py-2 text-xs font-bold text-ocean hover:bg-blue-100">{text.viewLog}<ChevronRight size={14} /></button></li> })}</ul></div>}
         </section>
 
-        {selectedActivity && <div className="fixed inset-0 z-[95] grid place-items-center overflow-y-auto bg-slate-950/45 px-5 py-8 backdrop-blur-sm" role="dialog" aria-modal="true"><div className="relative my-auto w-full max-w-2xl rounded-[2rem] bg-white p-7 shadow-2xl sm:p-9"><button type="button" onClick={() => setSelectedActivity(null)} className="absolute right-5 top-5 rounded-full p-2 text-slate-400 hover:bg-slate-100" aria-label="Close">×</button><p className="text-xs font-bold uppercase tracking-[0.2em] text-ocean">{selectedActivity.type === 'race' ? text.race : text.practice}</p><h2 className="mt-2 pr-8 font-display text-3xl font-extrabold tracking-[-0.06em] text-ink">{selectedActivity.name || selectedActivity.track_name || text.practice}</h2><p className="mt-2 text-sm text-slate-500">{selectedActivity.track_name || '—'} · {selectedActivity.activityAt ? new Date(selectedActivity.activityAt).toLocaleString(language === 'id' ? 'id-ID' : 'en-US') : '—'}</p><div className="mt-6 grid grid-cols-3 gap-3"><div className="rounded-2xl bg-mist p-3"><p className="text-[10px] font-bold uppercase text-slate-400">{text.totalLaps}</p><p className="mt-1 font-display text-2xl font-extrabold text-ink">{activityLaps(selectedActivity).length}</p></div><div className="rounded-2xl bg-mist p-3"><p className="text-[10px] font-bold uppercase text-slate-400">{text.bestLap}</p><p className="mt-1 font-mono text-lg font-extrabold text-ink">{formatLap(Math.min(...(activityLaps(selectedActivity).length ? activityLaps(selectedActivity) : [0])))}</p></div><div className="rounded-2xl bg-mist p-3"><p className="text-[10px] font-bold uppercase text-slate-400">{text.visibility}</p><p className="mt-1 text-sm font-extrabold text-ink">{selectedActivity.type === 'practice' ? (selectedActivity.visibility === 'public' ? text.public : text.private) : text.public}</p></div></div><div className="mt-6 max-h-72 overflow-auto rounded-2xl border border-slate-200"><table className="w-full text-left text-sm"><thead className="sticky top-0 bg-slate-50 text-xs uppercase tracking-wide text-slate-400"><tr><th className="px-4 py-3">#</th><th className="px-4 py-3">{text.laps}</th><th className="px-4 py-3">{text.bestLap}</th></tr></thead><tbody className="divide-y divide-slate-100">{activityLaps(selectedActivity).map((lap, index) => <tr key={`${selectedActivity.id}-${index}`}><td className="px-4 py-2 font-bold text-slate-400">{index + 1}</td><td className="px-4 py-2 font-mono text-ink">{formatLap(lap)}</td><td className="px-4 py-2 text-slate-500">{lap === Math.min(...activityLaps(selectedActivity)) ? 'Best' : '—'}</td></tr>)}</tbody></table></div></div></div>}
+        {selectedActivity && <ActivityDetail activity={selectedActivity} language={language} text={text} onClose={() => setSelectedActivity(null)} />}
 
         <section className="mt-6 rounded-[2rem] border border-blue-100 bg-white p-7 shadow-card sm:p-9">
           <div className="flex items-start gap-3">

@@ -82,13 +82,13 @@ const copy = {
     filterTrack: 'Filter by track', filterFrom: 'From', filterTo: 'To', newest: 'Newest', oldest: 'Oldest',
     records: 'Race best laps', archived: 'Archived', appOnlyTrack: 'Tracks are created, edited, and archived from the YurLaps Windows app.',
     lapMatrix: 'Lap times', positionChart: 'Position progression', gapChart: 'Gap to leader', distribution: 'Lap time distribution',
-    driver: 'Driver', pos: 'POS', change: 'CHG', gap: 'GAP', laps: 'LAPS', total: 'TOTAL', bestLap: 'BEST LAP', top3: 'TOP3 AVG', p80: 'P80 AVG', consistency: 'CONSISTENCY', median: 'Median',
+    driver: 'Driver', pos: 'POS', change: 'CHG', gap: 'GAP', laps: 'LAPS', total: 'TOTAL', bestLap: 'BEST LAP', top3: 'TOP3 AVG', top3Consecutive: 'TOP3 CONSECUTIVE', p80: 'P80 AVG', consistency: 'CONSISTENCY', topSpeed: 'TOP SPEED', median: 'Median',
     raceDate: 'Race date',
     trackName: 'Track',
     location: 'Location',
     entries: 'entries',
     viewResults: 'View results',
-    exportCsv: 'Export CSV',
+    exportCsv: 'Export CSV', exportPdf: 'Export PDF',
     close: 'Close',
     results: 'Results',
     noResults: 'No result rows for this race.',
@@ -184,13 +184,13 @@ const copy = {
     filterTrack: 'Filter track', filterFrom: 'Dari', filterTo: 'Sampai', newest: 'Terbaru', oldest: 'Terlama',
     records: 'Best lap race', archived: 'Diarsipkan', appOnlyTrack: 'Track dibuat, diubah, dan diarsipkan dari aplikasi YurLaps Windows.',
     lapMatrix: 'Waktu lap', positionChart: 'Pergerakan posisi', gapChart: 'Gap ke leader', distribution: 'Distribusi waktu lap',
-    driver: 'Pembalap', pos: 'POS', change: 'CHG', gap: 'GAP', laps: 'LAP', total: 'TOTAL', bestLap: 'BEST LAP', top3: 'RATA2 TOP3', p80: 'RATA2 P80', consistency: 'KONSISTENSI', median: 'Median',
+    driver: 'Pembalap', pos: 'POS', change: 'CHG', gap: 'GAP', laps: 'LAP', total: 'TOTAL', bestLap: 'BEST LAP', top3: 'RATA2 TOP3', top3Consecutive: 'TOP3 BERURUTAN', p80: 'RATA2 P80', consistency: 'KONSISTENSI', topSpeed: 'TOP SPEED', median: 'Median',
     raceDate: 'Tanggal race',
     trackName: 'Track',
     location: 'Lokasi',
     entries: 'entri',
     viewResults: 'Lihat hasil',
-    exportCsv: 'Export CSV',
+    exportCsv: 'Export CSV', exportPdf: 'Export PDF',
     close: 'Tutup',
     results: 'Hasil',
     noResults: 'Belum ada baris hasil untuk race ini.',
@@ -304,6 +304,13 @@ function exportRaceCsv(race) {
   URL.revokeObjectURL(url)
 }
 
+function exportRacePdf(race) {
+  if (!race) return
+  // Browser print keeps the report layout identical to the visible modal.
+  document.title = `${race.name || 'YurLaps race'} - results`
+  window.setTimeout(() => window.print(), 80)
+}
+
 function formatLap(ms) {
   if (ms === null || ms === undefined || !Number.isFinite(Number(ms))) return '—'
   const value = Number(ms)
@@ -331,6 +338,15 @@ function raceReportRows(race) {
       best_ms: row.best_ms ?? (ordered[0] ?? null),
       total_ms: row.total_ms ?? (laps.length ? laps.reduce((sum, value) => sum + value, 0) : null),
       top3_ms: row.top3_ms ?? (ordered.length >= 3 ? ordered.slice(0, 3).reduce((sum, value) => sum + value, 0) / 3 : null),
+      consecutive_ms: row.consecutive_ms ?? row.top3_consecutive_ms ?? (() => {
+        if (laps.length < 3) return null
+        let best = Infinity
+        for (let start = 0; start <= laps.length - 3; start += 1) {
+          best = Math.min(best, (laps[start] + laps[start + 1] + laps[start + 2]) / 3)
+        }
+        return Number.isFinite(best) ? best : null
+      })(),
+      top_speed_kmh: row.top_speed_kmh ?? row.speed_kmh ?? row.topSpeedKmh ?? null,
       p80_ms: row.p80_ms ?? (ordered.length ? ordered.slice(0, Math.max(1, Math.ceil(ordered.length * 0.8))).reduce((sum, value) => sum + value, 0) / Math.max(1, Math.ceil(ordered.length * 0.8)) : null),
       consistency: row.consistency ?? (mean ? Math.max(0, 1 - sigma / mean) * 100 : null),
     }
@@ -1051,10 +1067,7 @@ export default function ClubDashboardPage({
                 ))}
               </ul>
             )}
-            {Object.keys(lapRecordsByTrack).length > 0 && <div className="mt-7 rounded-2xl border border-amber-100 bg-amber-50/60 p-4">
-              <h3 className="flex items-center gap-2 text-sm font-extrabold uppercase tracking-wide text-amber-700"><Trophy size={16} /> {text.records}</h3>
-              <div className="mt-3 grid gap-4 lg:grid-cols-2">{Object.entries(lapRecordsByTrack).map(([trackName, records]) => <div key={trackName} className="overflow-hidden rounded-xl bg-white"><div className="border-b border-slate-100 px-3 py-2 text-sm font-extrabold text-ink">{trackName}</div><div className="divide-y divide-slate-100">{records.map((record, index) => <div key={`${record.driver}-${record.lap}-${index}`} className="flex items-center gap-3 px-3 py-2 text-xs"><span className={`grid h-6 w-6 place-items-center rounded-full font-extrabold ${record.rank === 1 ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>{record.rank}</span><span className="min-w-0 flex-1 truncate font-bold text-ink">{record.driver}</span><span className="font-mono font-bold text-ocean">{formatLap(record.lap)}</span></div>)}</div></div>)}</div>
-            </div>}
+
           </section>
         ) : tab === 'member' ? (
           <section className="mt-6 rounded-[2rem] border border-blue-100 bg-white p-7 shadow-card sm:p-9">
@@ -1207,6 +1220,7 @@ export default function ClubDashboardPage({
                 })}
               </ul>
             )}
+
           </section>
         ) : tab === 'track' ? (
           <section className="mt-6 rounded-[2rem] border border-blue-100 bg-white p-7 shadow-card sm:p-9">
@@ -1239,6 +1253,7 @@ export default function ClubDashboardPage({
                 ))}
               </ul>
             )}
+            {Object.keys(lapRecordsByTrack).length > 0 && <div className="mt-8"><div className="flex items-end justify-between gap-3"><div><h3 className="font-display text-xl font-extrabold tracking-[-0.04em] text-ink">{text.records}</h3><p className="mt-1 text-xs text-slate-500">Race only · practice tidak dihitung</p></div><Trophy size={19} className="text-amber-500" /></div><div className="mt-4 grid gap-4 lg:grid-cols-2">{Object.entries(lapRecordsByTrack).map(([trackName, records]) => <div key={trackName} className="overflow-hidden rounded-2xl border border-slate-200"><div className="border-b border-slate-100 bg-slate-50 px-4 py-3 font-bold text-ink">{trackName}</div><div className="divide-y divide-slate-100">{records.map((record, index) => <div key={`${trackName}-${record.driver}-${record.lap}-${index}`} className="flex items-center gap-3 px-4 py-2.5 text-xs"><span className={`grid h-7 w-7 place-items-center rounded-full font-extrabold ${record.rank === 1 ? 'bg-amber-100 text-amber-700' : record.rank === 2 ? 'bg-slate-200 text-slate-600' : record.rank === 3 ? 'bg-orange-100 text-orange-700' : 'bg-mist text-ocean'}`}>{record.rank}</span><div className="min-w-0 flex-1"><p className="truncate font-bold text-ink">{record.driver}</p><p className="text-[10px] text-slate-400">{formatDate(record.date, language)}</p></div><span className="font-mono font-extrabold text-ocean">{formatLap(record.lap)}</span></div>)}</div></div>)}</div></div>}
           </section>
         ) : tab === 'setting' ? (
           isLeader ? (
@@ -1449,7 +1464,7 @@ export default function ClubDashboardPage({
                   <div className="mt-3 overflow-auto rounded-2xl border border-slate-200">
                     <table className="w-full min-w-[58rem] text-left text-xs">
                       <thead className="bg-slate-50 uppercase tracking-wide text-slate-400"><tr>
-                        {[text.pos, text.change, text.driver, text.gap, text.laps, text.total, text.bestLap, text.top3, text.p80, text.consistency].map((label) => <th key={label} className="px-3 py-2.5 font-bold">{label}</th>)}
+                        {[text.pos, text.change, text.driver, text.gap, text.laps, text.total, text.bestLap, text.top3, text.top3Consecutive, text.p80, text.consistency, text.topSpeed].map((label) => <th key={label} className="px-3 py-2.5 font-bold">{label}</th>)}
                       </tr></thead>
                       <tbody className="divide-y divide-slate-100">{reportRows.map((row, index) => <tr key={row.uid || row.id || index}>
                         <td className="px-3 py-2.5 font-extrabold text-ocean">{row.pos}</td>
@@ -1460,8 +1475,10 @@ export default function ClubDashboardPage({
                         <td className="px-3 py-2.5 font-mono text-slate-600">{formatLap(row.total_ms)}</td>
                         <td className="px-3 py-2.5 font-mono font-bold text-ocean">{formatLap(row.best_ms)}</td>
                         <td className="px-3 py-2.5 font-mono text-slate-600">{formatLap(row.top3_ms)}</td>
+                        <td className="px-3 py-2.5 font-mono text-slate-600">{formatLap(row.consecutive_ms)}</td>
                         <td className="px-3 py-2.5 font-mono text-slate-600">{formatLap(row.p80_ms)}</td>
                         <td className="px-3 py-2.5 font-semibold text-slate-600">{row.consistency == null ? '—' : `${Number(row.consistency).toFixed(1)}%`}</td>
+                        <td className="px-3 py-2.5 font-mono text-slate-600">{row.top_speed_kmh == null ? '—' : `${Number(row.top_speed_kmh).toFixed(2)} km/h`}</td>
                       </tr>)}</tbody>
                     </table>
                   </div>
@@ -1486,6 +1503,14 @@ export default function ClubDashboardPage({
                 className="inline-flex items-center gap-2 rounded-2xl bg-ocean px-5 py-3 text-sm font-bold text-white transition hover:bg-[#1855db] disabled:opacity-50"
               >
                 <Download size={16} /> {text.exportCsv}
+              </button>
+              <button
+                type="button"
+                onClick={() => exportRacePdf(selectedRace)}
+                disabled={!Array.isArray(selectedRace.results) || selectedRace.results.length === 0}
+                className="inline-flex items-center gap-2 rounded-2xl border border-ocean/20 bg-blue-50 px-5 py-3 text-sm font-bold text-ocean transition hover:bg-blue-100 disabled:opacity-50"
+              >
+                <Flag size={16} /> {text.exportPdf}
               </button>
               <button
                 type="button"

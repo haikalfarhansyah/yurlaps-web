@@ -18,6 +18,7 @@ import CommunityPage from './CommunityPage'
 import ClubDashboardPage from './ClubDashboardPage'
 import DesktopLoginPage from './DesktopLoginPage'
 import DownloadPage from './DownloadPage'
+import PublicClubPreview from './PublicClubPreview'
 
 const gallery = [
   { src: '/gallery-transponder-size.png', alt: 'YURLAPS Transponder size comparison' },
@@ -29,12 +30,13 @@ const pageFromPath = (path = window.location.pathname) => {
   if (path === '/login') return 'login'
   if (path === '/dashboard') return 'dashboard'
   if (path === '/community') return 'community'
+  if (path === '/public-club' || path.startsWith('/public-club/')) return 'public-club'
   if (path === '/club' || path.startsWith('/club/')) return 'club'
   return 'home'
 }
 
 const clubIdFromPath = (path = window.location.pathname) => {
-  if (!path.startsWith('/club/')) return null
+  if (!path.startsWith('/club/') && !path.startsWith('/public-club/')) return null
   return path.split('/')[2] || null
 }
 
@@ -495,7 +497,7 @@ function App() {
 
   const openCommunity = () => navigateTo('/community')
 
-  const openClub = (id) => navigateTo(id ? `/club/${id}` : '/club')
+  const openClub = (id) => navigateTo(id && !session ? `/public-club/${id}` : (id ? `/club/${id}` : '/club'))
 
   const openDashboard = () => {
     if (!session) {
@@ -657,6 +659,8 @@ function App() {
           onRequireLogin={handleRequireLogin}
           onOpenClub={openClub}
         />
+      ) : currentPage === 'public-club' ? (
+        <PublicClubPreview clubId={clubId} language={language} onBack={openCommunity} />
       ) : currentPage === 'club' ? (
         session ? (
           <ClubDashboardPage
