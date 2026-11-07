@@ -117,7 +117,7 @@ operator choice, never silently overwrite them.
 
 Validation: `npm test`, `npm run test:db` (isolated PGlite database), `npm run build`.
 
-Deployment note: the desktop sync migration was applied and verified on the connected YurLaps Supabase project on 2026-11-06. Do not manually re-run it on that project. Other environments must apply it before deploying this release.
+Deployment note: this source package does not claim that any remote Supabase project has been changed. Apply the migrations in `supabase/migrations/` in filename order to the target project, including `20261107180000_production_timing_contract.sql`, then run the database checks before deploying. Keep a backup and review the SQL against the target schema first; migrations use idempotent `if not exists`/`create or replace` operations where possible.
 
 Public club pages
 

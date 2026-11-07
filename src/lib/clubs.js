@@ -273,6 +273,7 @@ export async function fetchClubTracks(clubId) {
     .from('club_tracks')
     .select('*')
     .eq('club_id', clubId)
+    .is('deleted_at', null)
     .order('created_at', { ascending: true })
   if (error) throw error
   return data || []
@@ -280,24 +281,32 @@ export async function fetchClubTracks(clubId) {
 
 export async function fetchPracticeSessions(userId, { clubId } = {}) {
   const client = requireClient()
-  let query = client.from('practice_sessions').select('*').order('started_at', { ascending: false })
-  if (userId) query = query.eq('user_id', userId)
-  if (clubId) query = query.eq('club_id', clubId)
-  const { data, error } = await query
-  if (error) throw error
-  return data || []
+  const sessions = []
+  for (let offset = 0; ; offset += 500) {
+    let query = client.from('practice_sessions').select('*').order('started_at', { ascending: false }).order('id').range(offset, offset + 499)
+    if (userId) query = query.eq('user_id', userId)
+    if (clubId) query = query.eq('club_id', clubId)
+    const { data, error } = await query
+    if (error) throw error
+    sessions.push(...(data || []))
+    if (!data || data.length < 500) return sessions
+  }
 }
 
 // Build a driver-centric race history from club race snapshots. Race rows are
 // uploaded by the club leader, so filtering only by created_by would hide a
 // member's own participation.
 export async function fetchPersonalRaces(userId) {
-  requireClient()
-  const memberships = await fetchMyMemberships(userId)
-  const clubIds = [...new Set(memberships.filter((row) => row.status === 'active').map((row) => row.club_id))]
-  if (!clubIds.length) return []
-  const raceGroups = await Promise.all(clubIds.map((clubId) => fetchClubRaces(clubId)))
-  return raceGroups.flat().map((rawRace) => {
+  const client = requireClient()
+  if (!userId) return []
+  const races = []
+  for (let offset = 0; ; offset += 500) {
+    const { data, error } = await client.rpc('list_personal_races', { p_limit: 500, p_offset: offset })
+    if (error) throw error
+    races.push(...(data || []))
+    if (!data || data.length < 500) break
+  }
+  return races.map((rawRace) => {
     const race = normalizeRace(rawRace)
     const rows = Array.isArray(race.results) ? race.results : []
     // Race rows contain immutable account/member identity snapshots. Do not

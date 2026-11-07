@@ -22,6 +22,10 @@ function rowSnapshot(row, race, index) {
   const ids = accountIds(row)
   if (ids.length) {
     const matches = drivers.filter((driver) => accountIds(driver).some((id) => ids.includes(id)))
+    if (uid) {
+      const exact = matches.find((driver) => [driver.uid, driver.driver_uid, driver.driverId].filter(Boolean).map(String).includes(String(uid)))
+      if (exact) return exact
+    }
     return matches.length === 1 ? matches[0] : {}
   }
   if (uid) {
@@ -44,39 +48,48 @@ function rowSnapshot(row, race, index) {
 export function normalizeRaceRow(row, race, index = 0) {
   const source = asObject(row)
   const snapshot = rowSnapshot(source, race, index)
-  const laps = Array.isArray(source.laps)
-    ? source.laps
-    : (Array.isArray(source.laps_ms) ? source.laps_ms : (Array.isArray(source.lap_times) ? source.lap_times : []))
+  const merged = { ...snapshot, ...source }
+  const laps = [source.laps, source.laps_ms, source.lap_times, source.lap_ms,
+    snapshot.laps, snapshot.laps_ms, snapshot.lap_times, snapshot.lap_ms].find(Array.isArray) || []
   const accountId = source.user_id || source.driver_id || source.userId || source.member_user_id || source.account_id || source.member_id
-    || snapshot.user_id || snapshot.driver_id || snapshot.userId || snapshot.member_id || snapshot.account_id || null
+    || snapshot.user_id || snapshot.driver_id || snapshot.userId || snapshot.member_user_id || snapshot.member_id || snapshot.account_id || null
+  const originalName = source.name || source.driver_name || source.driver || ''
+  const snapshotName = snapshot.name || snapshot.driver_name || snapshot.driver || ''
+  const name = (!originalName || /^driver\s+\d+$/i.test(originalName.trim())) && snapshotName ? snapshotName : originalName
   return {
-    ...source,
+    ...merged,
     laps,
     // Uploads from the desktop historically used driver/nickname/position.
     // Normalize those aliases once so every report renders the same snapshot.
-    name: source.name || source.driver_name || source.driver || snapshot.name || snapshot.driver || '',
+    name,
     nick: source.nick || source.nickname || snapshot.nick || snapshot.nickname || '',
     pos: source.pos ?? source.position ?? snapshot.pos ?? snapshot.position ?? index + 1,
-    n_lap: source.n_lap ?? source.total_laps ?? source.lap_count ?? laps.length,
-    total_ms: source.total_ms ?? source.total_time_ms ?? null,
+    n_lap: source.n_lap ?? source.total_laps ?? source.lap_count ?? snapshot.n_lap ?? snapshot.total_laps ?? snapshot.lap_count ?? laps.length,
+    total_ms: source.total_ms ?? source.total_time_ms ?? snapshot.total_ms ?? snapshot.total_time_ms ?? null,
     user_id: accountId,
     driver_id: source.driver_id || source.driverId || source.member_id || snapshot.driver_id || snapshot.member_id || null,
-    transponder: source.transponder ?? source.transponder_id ?? snapshot.transponder ?? null,
+    transponder: source.transponder ?? source.transponder_id ?? snapshot.transponder ?? snapshot.transponder_id ?? null,
+    passings: Array.isArray(source.passings) && source.passings.length ? source.passings : (snapshot.passings || []),
   }
 }
 
 export function normalizeRace(race) {
   if (!race) return race
-  const results = Array.isArray(race.results)
-    ? race.results.map((row, index) => normalizeRaceRow(row, race, index))
-    : []
-  return { ...race, results }
+  const session = asObject(race.session_data || race.sessionData)
+  const results = normalizeRaceRows(race)
+  return { ...race, results, track_id: race.track_id ?? session.track_id ?? null,
+    timing_interrupted: race.timing_interrupted ?? session.timing_interrupted ?? false }
 }
 
 export function normalizeRaceRows(race) {
-  return Array.isArray(race?.results)
-    ? race.results.map((row, index) => normalizeRaceRow(row, race, index))
-    : []
+  const rows = Array.isArray(race?.results) && race.results.length ? race.results : sessionDrivers(race)
+  return rows.map((row, index) => normalizeRaceRow(row, race, index))
+}
+
+export function isRaceRecordEligible(race) {
+  const session = asObject(race?.session_data || race?.sessionData)
+  const interrupted = [race?.timing_interrupted, session.timing_interrupted].some((value) => value === true || value === 'true' || value === 1)
+  return !interrupted && ![race?.type, race?.mode, session.mode].includes('practice')
 }
 
 export function raceRowBelongsTo(row, userId) {

@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "test": "node --test tests/*.test.js",
     "test:db": "node scripts/test-sync-database.mjs",
-    "test:public": "node scripts/test-public-clubs.mjs"
+    "test:public": "node scripts/test-public-clubs.mjs",
+    "test:timing": "node scripts/test-production-timing.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.118.0",

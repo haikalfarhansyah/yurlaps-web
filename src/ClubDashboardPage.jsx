@@ -20,7 +20,7 @@ import {
   X,
 } from 'lucide-react'
 import { openRacePdfReport } from './lib/racePdf'
-import { normalizeRace } from './lib/raceIdentity'
+import { isRaceRecordEligible, normalizeRace } from './lib/raceIdentity'
 import {
   clubError,
   fetchClub,
@@ -328,6 +328,8 @@ function formatGap(gap) {
 }
 
 function raceReportRows(race) {
+  const config = race?.cfg || race?.session_data?.configuration || race?.sessionData?.configuration || {}
+  const gridPosition = config.start_mode === 'grid' && config.rank === 'position'
   const rows = (Array.isArray(race?.results) ? race.results : []).map((row, index) => {
     const laps = (Array.isArray(row.laps) ? row.laps : (Array.isArray(row.laps_ms) ? row.laps_ms : [])).map(Number).filter(Number.isFinite)
     const ordered = [...laps].sort((a, b) => a - b)
@@ -353,6 +355,7 @@ function raceReportRows(race) {
       top_speed_kmh: row.top_speed_kmh ?? row.speed_kmh ?? row.topSpeedKmh ?? null,
       p80_ms: row.p80_ms ?? (ordered.length ? ordered.slice(0, Math.max(1, Math.ceil(ordered.length * 0.8))).reduce((sum, value) => sum + value, 0) / Math.max(1, Math.ceil(ordered.length * 0.8)) : null),
       consistency: row.consistency ?? (mean ? Math.max(0, 1 - sigma / mean) * 100 : null),
+      passings: Array.isArray(row.passings) ? row.passings : [],
     }
   })
   const maxLaps = Math.max(0, ...rows.map((row) => row.laps.length))
@@ -364,6 +367,13 @@ function raceReportRows(race) {
       rows[item.index].positions[lap] = position + 1
       rows[item.index].gaps[lap] = (item.value - leader) / 1000
     })
+    if (gridPosition) {
+      const passingTimes = rows.map((row, index) => {
+        const passing = row.passings.filter((entry) => entry && entry.origin !== true && entry.accepted !== false && entry.diterima !== false && entry.lap_ms != null && entry.decoder_timecode != null)[lap]
+        return passing ? { index, timestamp: Number(passing.decoder_timecode) } : null
+      }).filter(Boolean).sort((a, b) => a.timestamp - b.timestamp)
+      passingTimes.forEach((entry, position) => { rows[entry.index].positions[lap] = position + 1 })
+    }
   }
   const leader = rows[0]
   rows.forEach((row) => {
@@ -628,7 +638,7 @@ export default function ClubDashboardPage({
     .sort((a, b) => raceFilter.order === 'oldest'
       ? new Date(a.raced_at || 0) - new Date(b.raced_at || 0)
       : new Date(b.raced_at || 0) - new Date(a.raced_at || 0))
-  const lapRecordsByTrack = races.reduce((groups, race) => {
+  const lapRecordsByTrack = races.filter(isRaceRecordEligible).reduce((groups, race) => {
     const trackName = race.track_name || 'Track tanpa nama'
     const rows = Array.isArray(race.results) ? race.results : []
     rows.forEach((row) => {
