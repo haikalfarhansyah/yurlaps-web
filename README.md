@@ -118,3 +118,10 @@ operator choice, never silently overwrite them.
 Validation: `npm test`, `npm run test:db` (isolated PGlite database), `npm run build`.
 
 Deployment note: the desktop sync migration was applied and verified on the connected YurLaps Supabase project on 2026-11-06. Do not manually re-run it on that project. Other environments must apply it before deploying this release.
+
+Public club pages
+
+Apply `supabase/migrations/20261107140000_public_club_results.sql` after the
+desktop sync migrations. It gives anonymous visitors read-only access to race
+results and race-only track records for clubs whose visibility is `public`.
+Private clubs and personal dashboards remain protected by RLS.

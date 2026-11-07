@@ -264,11 +264,11 @@ function App() {
 
   useEffect(() => {
     if (!authReady || session) return
-    if (currentPage !== 'dashboard' && currentPage !== 'club') return
+    if (currentPage !== 'dashboard' && !(currentPage === 'club' && !clubId)) return
     setRedirectTarget(window.location.pathname)
     window.history.replaceState({}, '', '/login')
     setCurrentPage('login')
-  }, [authReady, currentPage, session])
+  }, [authReady, currentPage, session, clubId])
 
   const copy = {
     en: {
@@ -658,6 +658,7 @@ function App() {
           onBack={goHome}
           onRequireLogin={handleRequireLogin}
           onOpenClub={openClub}
+          onOpenPublicClub={(id) => navigateTo(`/public-club/${id}`)}
         />
       ) : currentPage === 'public-club' ? (
         <PublicClubPreview clubId={clubId} language={language} onBack={openCommunity} />
@@ -672,6 +673,8 @@ function App() {
             onSignOut={handleSignOut}
             onSelectClub={(id) => openClub(id)}
           />
+        ) : clubId ? (
+          <PublicClubPreview clubId={clubId} language={language} onBack={openCommunity} />
         ) : (
           <main className="grid min-h-[60vh] place-items-center px-5">
             <p className="text-sm font-semibold text-slate-500">{text.loading}</p>

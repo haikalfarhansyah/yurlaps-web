@@ -1,5 +1,6 @@
 import { supabase } from './supabase'
 import { getFriendlyError } from './account'
+import { normalizeRace, raceRowBelongsTo } from './raceIdentity'
 
 export const PERMISSION_KEYS = [
   'edit_club',
@@ -291,26 +292,19 @@ export async function fetchPracticeSessions(userId, { clubId } = {}) {
 // uploaded by the club leader, so filtering only by created_by would hide a
 // member's own participation.
 export async function fetchPersonalRaces(userId) {
-  const client = requireClient()
+  requireClient()
   const memberships = await fetchMyMemberships(userId)
   const clubIds = [...new Set(memberships.filter((row) => row.status === 'active').map((row) => row.club_id))]
   if (!clubIds.length) return []
-  const { data: transponderRows, error: transponderError } = await client
-    .from('transponders')
-    .select('transponder_id')
-    .eq('user_id', userId)
-  if (transponderError) throw transponderError
-  const transponders = new Set((transponderRows || []).map((row) => String(row.transponder_id)))
   const raceGroups = await Promise.all(clubIds.map((clubId) => fetchClubRaces(clubId)))
-  return raceGroups.flat().map((race) => {
+  return raceGroups.flat().map((rawRace) => {
+    const race = normalizeRace(rawRace)
     const rows = Array.isArray(race.results) ? race.results : []
-    const personalResults = rows.filter((row) => {
-      const owner = [row.user_id, row.driver_id, row.userId, row.member_user_id].filter(Boolean).map(String)
-      const tp = row.transponder ?? row.transponder_id
-      return owner.includes(String(userId)) || (tp !== undefined && transponders.has(String(tp)))
-    })
-    if (!personalResults.length && String(race.created_by || '') !== String(userId)) return null
-    return { ...race, personal_results: personalResults.length ? personalResults : rows }
+    // Race rows contain immutable account/member identity snapshots. Do not
+    // match today's transponder owner: a transponder may change hands later.
+    const personalResults = rows.filter((row) => raceRowBelongsTo(row, userId))
+    if (!personalResults.length) return null
+    return { ...race, personal_results: personalResults }
   }).filter(Boolean).sort((a, b) => new Date(b.raced_at || 0) - new Date(a.raced_at || 0))
 }
 
@@ -351,5 +345,26 @@ export async function fetchClubRaces(clubId) {
     .eq('club_id', clubId)
     .order('raced_at', { ascending: false })
   if (error) throw error
-  return data || []
+  return (data || []).map(normalizeRace)
+}
+
+// Public club pages use the anonymous Supabase client. The RLS migration
+// limits these reads to non-archived tracks and races belonging to public clubs.
+export async function fetchPublicClubData(clubId) {
+  const client = requireClient()
+  const [clubResult, trackResult, raceResult] = await Promise.all([
+    client.rpc('list_public_clubs'),
+    client.from('club_tracks').select('*').eq('club_id', clubId).is('deleted_at', null).order('name'),
+    client.from('races').select('*').eq('club_id', clubId).order('raced_at', { ascending: false }),
+  ])
+  if (clubResult.error) throw clubResult.error
+  if (trackResult.error) throw trackResult.error
+  if (raceResult.error) throw raceResult.error
+  const club = (clubResult.data || []).find((item) => item.id === clubId)
+  if (!club) return null
+  return {
+    club,
+    tracks: trackResult.data || [],
+    races: (raceResult.data || []).map(normalizeRace),
+  }
 }

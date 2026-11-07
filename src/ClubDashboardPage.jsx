@@ -19,6 +19,8 @@ import {
   Users,
   X,
 } from 'lucide-react'
+import { openRacePdfReport } from './lib/racePdf'
+import { normalizeRace } from './lib/raceIdentity'
 import {
   clubError,
   fetchClub,
@@ -306,9 +308,11 @@ function exportRaceCsv(race) {
 
 function exportRacePdf(race) {
   if (!race) return
-  // Browser print keeps the report layout identical to the visible modal.
-  document.title = `${race.name || 'YurLaps race'} - results`
-  window.setTimeout(() => window.print(), 80)
+  openRacePdfReport({
+    race,
+    rows: raceReportRows(race),
+    language: 'id',
+  })
 }
 
 function formatLap(ms) {
@@ -397,7 +401,7 @@ function RaceMiniChart({ rows, type }) {
       })}
     </svg>
     <div className="flex flex-wrap gap-x-4 gap-y-1 px-2 text-[11px] font-semibold text-slate-500">
-      {rows.map((row, index) => <span key={row.uid || row.id || index} className="inline-flex items-center gap-1.5"><i className="h-2 w-2 rounded-full" style={{ backgroundColor: colors[index % colors.length] }} />{row.nick || row.name || `Driver ${index + 1}`}</span>)}
+      {rows.map((row, index) => <span key={row.uid || row.id || index} className="inline-flex items-center gap-1.5"><i className="h-2 w-2 rounded-full" style={{ backgroundColor: colors[index % colors.length] }} />{row.name || row.nick || `Driver ${index + 1}`}</span>)}
     </div>
   </div>
 }
@@ -441,7 +445,7 @@ export default function ClubDashboardPage({
       pending = true
       try {
         const rows = await fetchClubRaces(activeClubId)
-        if (active) setRaces(rows)
+        if (active) setRaces(rows.map(normalizeRace))
       } catch {
         // Keep the last successful list while disconnected.
       } finally { pending = false }
@@ -548,7 +552,7 @@ export default function ClubDashboardPage({
         setProfiles(memberData.profiles)
         setTransponders(memberData.transponders)
         setTracks(trackRows)
-        setRaces(raceRows)
+        setRaces(raceRows.map(normalizeRace))
         setProfileForm({
           name: clubRow.name || '',
           description: clubRow.description || '',
@@ -631,7 +635,7 @@ export default function ClubDashboardPage({
       const laps = Array.isArray(row.laps) ? row.laps : (Array.isArray(row.laps_ms) ? row.laps_ms : [])
       laps.map(Number).filter((value) => Number.isFinite(value) && value > 0).forEach((lap, lapIndex) => {
         if (!groups[trackName]) groups[trackName] = []
-        groups[trackName].push({ lap, driver: row.nick || row.name || 'Driver', race: race.name, date: race.raced_at, lapIndex: lapIndex + 1 })
+        groups[trackName].push({ lap, driver: row.name || row.nick || 'Driver', race: race.name, date: race.raced_at, lapIndex: lapIndex + 1 })
       })
     })
     return groups
@@ -1469,7 +1473,7 @@ export default function ClubDashboardPage({
                       <tbody className="divide-y divide-slate-100">{reportRows.map((row, index) => <tr key={row.uid || row.id || index}>
                         <td className="px-3 py-2.5 font-extrabold text-ocean">{row.pos}</td>
                         <td className="px-3 py-2.5 font-semibold text-slate-500">{row.change > 0 ? `+${row.change}` : row.change ?? '—'}</td>
-                        <td className="px-3 py-2.5 font-bold text-ink">{row.nick || row.name || `Driver ${index + 1}`}</td>
+                        <td className="px-3 py-2.5 font-bold text-ink">{row.name || row.nick || `Driver ${index + 1}`}</td>
                         <td className="px-3 py-2.5 font-semibold text-slate-500">{formatGap(row.gap_leader)}</td>
                         <td className="px-3 py-2.5 text-slate-600">{row.n_lap}</td>
                         <td className="px-3 py-2.5 font-mono text-slate-600">{formatLap(row.total_ms)}</td>
@@ -1486,12 +1490,12 @@ export default function ClubDashboardPage({
 
                 <div>
                   <h3 className="text-sm font-extrabold uppercase tracking-wide text-slate-500">{text.lapMatrix}</h3>
-                  <div className="mt-3 max-h-64 overflow-auto rounded-2xl border border-slate-200"><table className="w-full min-w-[34rem] text-left text-xs"><thead className="sticky top-0 bg-slate-50 text-slate-400"><tr><th className="px-3 py-2">{text.driver}</th>{Array.from({ length: Math.max(...reportRows.map((row) => row.laps.length), 0) }, (_, index) => <th key={index} className="px-3 py-2">L{index + 1}</th>)}</tr></thead><tbody className="divide-y divide-slate-100">{reportRows.map((row, index) => <tr key={row.uid || row.id || index}><td className="px-3 py-2 font-bold text-ink">{row.nick || row.name || `Driver ${index + 1}`}</td>{row.laps.map((lap, lapIndex) => <td key={lapIndex} className={`px-3 py-2 font-mono ${lap === row.best_ms ? 'font-bold text-ocean' : 'text-slate-600'}`}>{formatLap(lap)}</td>)}</tr>)}</tbody></table></div>
+                  <div className="mt-3 max-h-64 overflow-auto rounded-2xl border border-slate-200"><table className="w-full min-w-[34rem] text-left text-xs"><thead className="sticky top-0 bg-slate-50 text-slate-400"><tr><th className="px-3 py-2">{text.driver}</th>{Array.from({ length: Math.max(...reportRows.map((row) => row.laps.length), 0) }, (_, index) => <th key={index} className="px-3 py-2">L{index + 1}</th>)}</tr></thead><tbody className="divide-y divide-slate-100">{reportRows.map((row, index) => <tr key={row.uid || row.id || index}><td className="px-3 py-2 font-bold text-ink">{row.name || row.nick || `Driver ${index + 1}`}</td>{row.laps.map((lap, lapIndex) => <td key={lapIndex} className={`px-3 py-2 font-mono ${lap === row.best_ms ? 'font-bold text-ocean' : 'text-slate-600'}`}>{formatLap(lap)}</td>)}</tr>)}</tbody></table></div>
                 </div>
 
                 <div><h3 className="text-sm font-extrabold uppercase tracking-wide text-slate-500">{text.positionChart}</h3><div className="mt-3"><RaceMiniChart rows={reportRows} type="position" /></div></div>
                 <div><h3 className="text-sm font-extrabold uppercase tracking-wide text-slate-500">{text.gapChart}</h3><div className="mt-3"><RaceMiniChart rows={reportRows} type="gap" /></div></div>
-                <div><h3 className="text-sm font-extrabold uppercase tracking-wide text-slate-500">{text.distribution}</h3><div className="mt-3 grid gap-3 sm:grid-cols-2">{reportRows.map((row, index) => { const fastest = row.laps.length ? Math.min(...row.laps) : null; const slowest = row.laps.length ? Math.max(...row.laps) : null; return <div key={row.uid || row.id || index} className="rounded-2xl bg-mist/60 p-4"><div className="flex items-center justify-between gap-2"><span className="truncate text-sm font-bold text-ink">{row.nick || row.name || `Driver ${index + 1}`}</span><span className="text-xs font-semibold text-slate-500">{row.n_lap} laps</span></div><div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-200"><span className="block h-full rounded-full bg-ocean" style={{ width: `${fastest && slowest ? Math.max(8, Math.min(100, (fastest / slowest) * 100)) : 0}%` }} /></div><div className="mt-2 flex justify-between font-mono text-[11px] text-slate-500"><span>{formatLap(fastest)}</span><span>{text.median}: {formatLap(row.rata_ms || median)}</span><span>{formatLap(slowest)}</span></div></div> })}</div></div>
+                <div><h3 className="text-sm font-extrabold uppercase tracking-wide text-slate-500">{text.distribution}</h3><div className="mt-3 grid gap-3 sm:grid-cols-2">{reportRows.map((row, index) => { const fastest = row.laps.length ? Math.min(...row.laps) : null; const slowest = row.laps.length ? Math.max(...row.laps) : null; return <div key={row.uid || row.id || index} className="rounded-2xl bg-mist/60 p-4"><div className="flex items-center justify-between gap-2"><span className="truncate text-sm font-bold text-ink">{row.name || row.nick || `Driver ${index + 1}`}</span><span className="text-xs font-semibold text-slate-500">{row.n_lap} laps</span></div><div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-200"><span className="block h-full rounded-full bg-ocean" style={{ width: `${fastest && slowest ? Math.max(8, Math.min(100, (fastest / slowest) * 100)) : 0}%` }} /></div><div className="mt-2 flex justify-between font-mono text-[11px] text-slate-500"><span>{formatLap(fastest)}</span><span>{text.median}: {formatLap(row.rata_ms || median)}</span><span>{formatLap(slowest)}</span></div></div> })}</div></div>
               </div> : <p className="mt-3 rounded-xl bg-slate-50 px-4 py-4 text-sm text-slate-500">{text.noResults}</p>
             })()}
 

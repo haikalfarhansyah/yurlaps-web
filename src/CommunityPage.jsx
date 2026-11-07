@@ -128,11 +128,6 @@ const inputClass =
   'w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-sm text-ink outline-none transition placeholder:text-slate-400 focus:border-ocean focus:bg-white focus:ring-4 focus:ring-blue-100'
 const labelClass = 'mb-2 block text-sm font-bold text-ink'
 
-const DEMO_CLUBS = [
-  { id: 'demo-bandung', name: 'Bandung RC Racing', description: 'Open practice nights, weekly races, and a friendly driver community.', address: 'Bandung, Jawa Barat', join_method: 'open', member_count: 42, avatar_url: '/yurlaps-logo-transparent.png' },
-  { id: 'demo-jakarta', name: 'Jakarta Mini Circuit', description: 'Technical indoor circuit with live lap timing and race-day broadcasts.', address: 'Jakarta Selatan', join_method: 'approval', member_count: 28, avatar_url: '' },
-]
-
 function initialsOf(name) {
   const parts = (name || 'C').trim().split(/\s+/).filter(Boolean)
   if (parts.length === 0) return 'C'
@@ -140,7 +135,7 @@ function initialsOf(name) {
   return `${parts[0][0]}${parts[1][0]}`.toUpperCase()
 }
 
-export default function CommunityPage({ session, language, onBack, onRequireLogin, onOpenClub }) {
+export default function CommunityPage({ session, language, onBack, onRequireLogin, onOpenClub, onOpenPublicClub = onOpenClub }) {
   const text = copy[language] || copy.en
   const [clubs, setClubs] = useState([])
   const [memberships, setMemberships] = useState({})
@@ -161,8 +156,6 @@ export default function CommunityPage({ session, language, onBack, onRequireLogi
     visibility: 'public',
     join_method: 'open',
   })
-  const [demoMode, setDemoMode] = useState(false)
-
   const loadCommunity = async () => {
     setLoading(true)
     setError('')
@@ -171,15 +164,13 @@ export default function CommunityPage({ session, language, onBack, onRequireLogi
         listPublicClubs(),
         session ? fetchMyMemberships(session.user.id) : Promise.resolve([]),
       ])
-      setDemoMode(!clubRows.length)
-      setClubs(clubRows.length ? clubRows : DEMO_CLUBS)
+      setClubs(clubRows)
       setMemberships(
         Object.fromEntries(membershipRows.map((membership) => [membership.club_id, membership])),
       )
     } catch (loadError) {
-      setDemoMode(true)
-      setClubs(DEMO_CLUBS)
-      setError('')
+      setClubs([])
+      setError(clubError(loadError, language))
     } finally {
       setLoading(false)
     }
@@ -429,15 +420,14 @@ export default function CommunityPage({ session, language, onBack, onRequireLogi
           </div>
         ) : (
           <>
-          {demoMode && <p className="mt-5 rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-xs font-semibold text-amber-700">Mode demo: club publik dapat dibuka tanpa login. Data asli akan muncul setelah Supabase terhubung.</p>}
           <div className="mt-6 grid gap-5 sm:grid-cols-2">
             {clubs.map((club) => (
               <article
                 key={club.id}
                 role="button"
                 tabIndex={0}
-                onClick={() => onOpenClub(club.id)}
-                onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') onOpenClub(club.id) }}
+                onClick={() => onOpenPublicClub(club.id)}
+                onKeyDown={(event) => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); onOpenPublicClub(club.id) } }}
                 className="group flex cursor-pointer flex-col rounded-[2rem] border border-blue-100 bg-white p-6 shadow-card transition hover:-translate-y-1 hover:border-ocean/40 hover:shadow-[0_20px_50px_rgba(7,88,216,0.15)]"
               >
                 <div className="flex items-start justify-between gap-3">
