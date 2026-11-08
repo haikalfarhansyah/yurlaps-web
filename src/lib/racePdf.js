@@ -63,15 +63,34 @@ function dateLabel(value, language) {
 
 function tableOptions(doc) {
   return {
-    margin: { top: 39, right: 12, bottom: 15, left: 12 },
+    margin: { top: 28, right: 12, bottom: 15, left: 12 },
     tableWidth: doc.internal.pageSize.getWidth() - 24,
     theme: 'grid',
     showHead: 'everyPage',
     rowPageBreak: 'avoid',
-    styles: { font: 'helvetica', fontSize: 7.5, cellPadding: 2.3, overflow: 'linebreak', textColor: INK, lineColor: [222, 232, 240], lineWidth: 0.1 },
-    headStyles: { fillColor: PALE_BLUE, textColor: BLUE, fontStyle: 'bold', fontSize: 7 },
-    alternateRowStyles: { fillColor: [248, 251, 253] },
+    styles: { font: 'helvetica', fontSize: 6.2, cellPadding: 1.8, overflow: 'linebreak', textColor: INK, lineColor: [220, 224, 229], lineWidth: 0.1 },
+    headStyles: { fillColor: [242, 244, 247], textColor: [83, 97, 116], fontStyle: 'bold', fontSize: 6.2 },
+    alternateRowStyles: { fillColor: [250, 250, 250] },
   }
+}
+
+function gapLabel(value) {
+  if (!value) return '-'
+  return value.laps != null ? `${value.laps >= 0 ? '+' : ''}${value.laps}L` : `${value.ms >= 0 ? '+' : ''}${(value.ms / 1000).toFixed(3)}`
+}
+
+function drawHeader(doc, race, data, section, page, pages, language) {
+  const width = doc.internal.pageSize.getWidth(); const height = doc.internal.pageSize.getHeight()
+  doc.setFillColor(247, 248, 250); doc.setDrawColor(220, 224, 229); doc.roundedRect(12, 8, width - 24, 16, 2, 2, 'FD')
+  doc.setFont('helvetica', 'bold').setFontSize(10).setTextColor(...INK); doc.text(String(race.name || 'Quick Race').slice(0, 85), 16, 15)
+  const cfg = race.cfg || {}; const target = `${cfg.value ?? '-'} ${cfg.target === 'laps' ? 'laps' : 'seconds'}`
+  const date = dateLabel(race.race_date || race.started_at, language)
+  doc.setFont('helvetica', 'normal').setFontSize(6.5).setTextColor(101, 117, 138)
+  doc.text(`${race.track_name || 'Track'} | ${(cfg.start_mode || 'grid').toUpperCase()} | ${target} | ${data.length} drivers | ${date}`.slice(0, 150), 16, 20)
+  doc.setFont('helvetica', 'bold').setFontSize(8).setTextColor(...BLUE); doc.text(section, 12, 30)
+  doc.setFont('helvetica', 'normal').setFontSize(6.5).setTextColor(101, 117, 138)
+  doc.text(`YurLaps | Offline results | GO decoder: ${race.start_decoder_ts ?? '-'} ms | ${race.finish_reason || 'Complete'}`.slice(0, 150), 12, height - 8)
+  doc.text(`${page} / ${pages}`, width - 12, height - 8, { align: 'right' })
 }
 
 /** Render data independently of the scrolling modal, including every lap. */
@@ -82,14 +101,14 @@ export function createRacePdf({ race, rows, language = 'id' } = {}) {
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4', compress: true })
   const title = String(race.name || race.title || 'YurLaps race')
   doc.setProperties({ title: `${title} - race results`, subject: 'Race leaderboard and lap detail', creator: 'YurLaps' })
-  const sections = new Map([[1, 'Leaderboard']])
+  const sections = new Map([[1, 'RESULTS']])
 
   autoTable(doc, {
     ...tableOptions(doc),
-    startY: 39,
-    head: [['Pos', 'Driver', 'Laps', 'Total time', 'Best lap', 'Top 3 avg', 'Top 3 cons.', 'P80 avg', 'Consistency', 'Top speed']],
-    body: data.map((row) => [row.pos, `${row.name}${row.transponder != null ? `\nTP ${row.transponder}` : ''}`, row.n_lap, lapTime(row.total_ms), lapTime(row.best_ms), lapTime(row.top3_ms), lapTime(row.consecutive_ms), lapTime(row.p80_ms), percent(row.consistency), speed(row.top_speed_kmh)]),
-    columnStyles: { 0: { cellWidth: 11, halign: 'center' }, 1: { cellWidth: 47 }, 2: { cellWidth: 12, halign: 'center' }, 4: { textColor: BLUE, fontStyle: 'bold' } },
+    startY: 35,
+    head: [['POS', 'CHG', 'DRIVER', 'GAP SUM', 'GAP DELTA', 'LAPS', 'TOTAL', 'BEST LAP', 'TOP3 AVG', 'TOP3 CONSEC', 'P80 AVG', 'CONSISTENCY', 'KM/H']],
+    body: data.map((row) => [row.pos, `${row.change == null ? 0 : row.change >= 0 ? '+' : ''}${row.change == null ? 0 : row.change}`, `${row.no || row.pos} · ${row.name}${row.transponder != null ? `\nTP ${row.transponder}` : ''}`, gapLabel(row.gap_leader), gapLabel(row.gap_previous), row.n_lap, lapTime(row.total_ms), lapTime(row.best_ms), lapTime(row.top3_ms), lapTime(row.consecutive_ms), lapTime(row.p80_ms), percent(row.consistency), speed(row.top_speed_kmh)]),
+    columnStyles: { 0: { cellWidth: 10, halign: 'center' }, 1: { cellWidth: 12, halign: 'center' }, 2: { cellWidth: 43 }, 3: { cellWidth: 22 }, 4: { cellWidth: 22 }, 5: { cellWidth: 12, halign: 'center' }, 7: { textColor: BLUE, fontStyle: 'bold' } },
     didParseCell(cell) {
       if (cell.section === 'body' && cell.column.index === 0 && cell.row.index < 3) {
         cell.cell.styles.fillColor = [[255, 242, 203], [231, 236, 241], [249, 226, 207]][cell.row.index]
@@ -99,45 +118,59 @@ export function createRacePdf({ race, rows, language = 'id' } = {}) {
   })
 
   const maxLaps = Math.max(0, ...data.map((row) => row.laps.length))
-  const lapsPerTable = 10
-  for (let first = 0; first < maxLaps; first += lapsPerTable) {
-    const count = Math.min(lapsPerTable, maxLaps - first)
-    doc.addPage()
-    sections.set(doc.getNumberOfPages(), `Lap detail - ${first + 1} to ${first + count}`)
-    autoTable(doc, {
-      ...tableOptions(doc),
-      startY: 39,
-      head: [['Driver', ...Array.from({ length: count }, (_, index) => `Lap ${first + index + 1}`)]],
-      body: data.map((row) => [row.name, ...Array.from({ length: count }, (_, index) => lapTime(row.laps[first + index]))]),
-      columnStyles: { 0: { cellWidth: 47, fontStyle: 'bold' } },
-      didParseCell(cell) {
-        if (cell.section === 'body' && cell.column.index > 0) {
-          const row = data[cell.row.index]
-          if (row.laps[first + cell.column.index - 1] === row.best_ms) {
-            cell.cell.styles.textColor = BLUE
-            cell.cell.styles.fontStyle = 'bold'
-          }
-        }
-      },
+  if (maxLaps) {
+    const groups = []
+    for (let start = 0; start < data.length; start += 9) groups.push(data.slice(start, start + 9))
+    groups.forEach((group, groupIndex) => {
+      if (groupIndex) { doc.addPage(); sections.set(doc.getNumberOfPages(), 'LAP TIMES') }
+      const startY = groupIndex ? 35 : doc.lastAutoTable.finalY + 8
+      autoTable(doc, { ...tableOptions(doc), startY,
+        head: [['LAP', ...group.map((row) => `${row.no || row.pos} ${row.name}`)]],
+        body: Array.from({ length: Math.max(...group.map((row) => row.laps.length), 0) }, (_, lap) => [lap + 1, ...group.map((row) => lapTime(row.laps[lap]))]),
+        columnStyles: { 0: { cellWidth: 12, fontStyle: 'bold' } },
+      })
     })
   }
 
-  const pageCount = doc.getNumberOfPages()
-  const metadata = [race.track_name || race.track, dateLabel(race.race_date || race.started_at, language), `${data.length} drivers`].filter(Boolean).join('  |  ')
-  let section = 'Leaderboard'
-  for (let page = 1; page <= pageCount; page += 1) {
-    doc.setPage(page)
-    section = sections.get(page) || section
-    doc.setFont('helvetica', 'bold').setFontSize(16).setTextColor(...INK)
-    doc.text(doc.splitTextToSize(title, 250).slice(0, 1), 12, 15)
-    doc.setFont('helvetica', 'normal').setFontSize(8).setTextColor(...MUTED)
-    doc.text(doc.splitTextToSize(metadata, 270).slice(0, 1), 12, 22)
-    doc.setDrawColor(...BLUE).setLineWidth(0.7).line(12, 27, 285, 27)
-    doc.setFont('helvetica', 'bold').setFontSize(9).setTextColor(...BLUE).text(section, 12, 34)
-    doc.setFont('helvetica', 'normal').setFontSize(7).setTextColor(...MUTED)
-    doc.text('YurLaps - Race report', 12, 202)
-    doc.text(`${page} / ${pageCount}`, 285, 202, { align: 'right' })
+  // Keep the same report sections as the Windows exporter: progression and
+  // lap distribution follow the lap matrix instead of being omitted online.
+  const drawProgress = (kind) => {
+    doc.addPage(); sections.set(doc.getNumberOfPages(), kind === 'position' ? 'POSITION PROGRESSION' : 'GAP TO LEADER (SECONDS)')
+    const left = 24; const top = 58; const width = 245; const height = 105
+    doc.setDrawColor(220, 227, 236); doc.line(left, top, left, top + height); doc.line(left, top + height, left + width, top + height)
+    const maxLapsChart = Math.max(1, ...data.map((row) => row.laps.length))
+    data.forEach((row, index) => {
+      const color = [[230, 90, 67], [73, 136, 219], [25, 165, 106], [167, 105, 220], [218, 142, 32]][index % 5]
+      doc.setDrawColor(...color); doc.setLineWidth(0.7)
+      const points = row.laps.map((lap, lapIndex) => {
+        const x = left + (lapIndex / Math.max(1, maxLapsChart - 1)) * width
+        const cumulative = row.laps.slice(0, lapIndex + 1).reduce((sum, value) => sum + value, 0)
+        const value = kind === 'position' ? (row.pos || index + 1) : cumulative / 1000
+        const maxValue = kind === 'position' ? Math.max(1, data.length) : Math.max(1, ...data.flatMap((item) => item.laps.reduce((sum, v) => sum + v, 0) / 1000))
+        const y = kind === 'position' ? top + ((value - 1) / Math.max(1, maxValue - 1)) * height : top + height - (value / maxValue) * height
+        return [x, y]
+      })
+      for (let i = 1; i < points.length; i += 1) doc.line(points[i - 1][0], points[i - 1][1], points[i][0], points[i][1])
+      doc.setFontSize(7).setTextColor(...color); doc.text(row.name || `Driver ${index + 1}`, left + width + 5, top + 5 + index * 8)
+    })
+    doc.setFontSize(8).setTextColor(...MUTED); doc.text('Lap', left + width / 2, top + height + 12, { align: 'center' })
   }
+  drawProgress('position'); drawProgress('gap')
+  doc.addPage(); sections.set(doc.getNumberOfPages(), 'LAP TIME DISTRIBUTION (WITH MEDIANS)')
+  doc.setFont('helvetica', 'normal').setFontSize(8).setTextColor(...MUTED)
+  doc.text('Light range: minimum to maximum. Dark range: 25th to 75th percentile. Vertical mark: median.', 12, 42)
+  data.forEach((row, index) => {
+    const laps = [...row.laps].sort((a, b) => a - b); if (!laps.length) return
+    const y = 58 + index * 15; const low = laps[0]; const high = laps[laps.length - 1]; const median = laps[Math.floor(laps.length / 2)]
+    const x = (value) => 70 + ((value - low) / Math.max(1, high - low)) * 205
+    doc.setFontSize(7).setTextColor(...INK); doc.text((row.name || `Driver ${index + 1}`).slice(0, 22), 12, y + 2)
+    doc.setDrawColor(237, 170, 163); doc.setLineWidth(4); doc.line(x(low), y, x(high), y)
+    doc.setDrawColor(218, 89, 77); doc.line(x(laps[Math.floor((laps.length - 1) * .25)]), y, x(laps[Math.floor((laps.length - 1) * .75)]), y)
+    doc.setDrawColor(...INK); doc.setLineWidth(0.7); doc.line(x(median), y - 4, x(median), y + 4)
+  })
+
+  const pageCount = doc.getNumberOfPages()
+  for (let page = 1; page <= pageCount; page += 1) { doc.setPage(page); drawHeader(doc, race, data, sections.get(page) || (page === 1 ? 'RESULTS' : 'LAP TIMES'), page, pageCount, language) }
   return doc
 }
 
