@@ -164,6 +164,12 @@ export async function joinClubByCode(code) {
   return data?.[0] || null
 }
 
+export async function leaveClub(clubId) {
+  const client = requireClient()
+  const { error } = await client.rpc('leave_club', { p_club_id: clubId })
+  if (error) throw error
+}
+
 export async function fetchClubMembers(clubId) {
   const client = requireClient()
   const { data: rows, error } = await client
@@ -324,6 +330,12 @@ export async function updatePracticeVisibility(id, visibility) {
   return data
 }
 
+export async function deletePracticeSession(id) {
+  const client = requireClient()
+  const { error } = await client.rpc('delete_personal_practice', { p_session_id: id })
+  if (error) throw error
+}
+
 export async function addClubTrack(clubId, userId, values) {
   const client = requireClient()
   const { data, error } = await client
@@ -361,19 +373,22 @@ export async function fetchClubRaces(clubId) {
 // limits these reads to non-archived tracks and races belonging to public clubs.
 export async function fetchPublicClubData(clubId) {
   const client = requireClient()
-  const [clubResult, trackResult, raceResult] = await Promise.all([
+  const [clubResult, trackResult, raceResult, memberResult] = await Promise.all([
     client.rpc('list_public_clubs'),
     client.from('club_tracks').select('*').eq('club_id', clubId).is('deleted_at', null).order('name'),
     client.from('races').select('*').eq('club_id', clubId).order('raced_at', { ascending: false }),
+    client.rpc('list_public_club_members', { p_club_id: clubId }),
   ])
   if (clubResult.error) throw clubResult.error
   if (trackResult.error) throw trackResult.error
   if (raceResult.error) throw raceResult.error
+  if (memberResult.error) throw memberResult.error
   const club = (clubResult.data || []).find((item) => item.id === clubId)
   if (!club) return null
   return {
     club,
     tracks: trackResult.data || [],
     races: (raceResult.data || []).map(normalizeRace),
+    members: memberResult.data || [],
   }
 }

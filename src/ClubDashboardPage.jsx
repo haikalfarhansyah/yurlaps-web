@@ -29,6 +29,7 @@ import {
   fetchClubTracks,
   fetchClubsByIds,
   fetchMyMemberships,
+  leaveClub,
   hasPermission,
   regenerateJoinCode,
   removeClubMember,
@@ -631,6 +632,12 @@ export default function ClubDashboardPage({
     }
   }
 
+  const handleLeaveClub = async () => {
+    if (!activeClubId || role === 'leader' || !window.confirm(language === 'id' ? 'Keluar dari club ini?' : 'Leave this club?')) return
+    try { await leaveClub(activeClubId); onBack() }
+    catch (error) { setDataError(clubError(error, language)) }
+  }
+
   const filteredRaces = races
     .filter((race) => !raceFilter.track || race.track_name === raceFilter.track)
     .filter((race) => !raceFilter.from || String(race.raced_at || '').slice(0, 10) >= raceFilter.from)
@@ -857,6 +864,7 @@ export default function ClubDashboardPage({
           >
             <LogOut size={16} /> {text.signOut}
           </button>
+          {!isLeader && <button type="button" onClick={handleLeaveClub} className="inline-flex items-center gap-2 rounded-full bg-rose-50 px-4 py-2.5 text-sm font-semibold text-rose-600 transition hover:bg-rose-100"><LogOut size={16} /> {language === 'id' ? 'Leave club' : 'Leave club'}</button>}
         </div>
 
         <div className="relative mt-5 overflow-hidden rounded-[2rem] bg-ink px-7 py-8 text-white shadow-[0_24px_80px_rgba(7,88,216,0.18)] sm:px-10">

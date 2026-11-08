@@ -29,7 +29,7 @@ import {
   updateAvatar,
   uploadAvatar,
 } from './lib/account'
-import { fetchPersonalRaces, fetchPracticeSessions, updatePracticeVisibility } from './lib/clubs'
+import { deletePracticeSession, fetchPersonalRaces, fetchPracticeSessions, updatePracticeVisibility } from './lib/clubs'
 import { activityLaps, activityMetrics, formatActivityLap as formatLap } from './lib/activity'
 
 const RC_CLASSES = [
@@ -98,7 +98,7 @@ const copy = {
     empty: 'No transponders yet. Add your first one above.',
     delete: 'Delete transponder',
     loading: 'Loading your account...',
-    activityTitle: 'My activity', activitySubtitle: 'Your own race participation and practice laps, kept separate from club administration.', practice: 'Practice', race: 'Race', private: 'Private', public: 'Public', all: 'All activity', filterTrack: 'Track', from: 'From', to: 'To', viewLog: 'View lap log', noActivity: 'No personal activity yet.', laps: 'laps', bestLap: 'Best lap', totalLaps: 'Total laps', session: 'session', visibility: 'Visibility',
+    activityTitle: 'My activity', activitySubtitle: 'Your own race participation and practice laps, kept separate from club administration.', practice: 'Practice', race: 'Race', private: 'Private', public: 'Public', all: 'All activity', filterTrack: 'Track', from: 'From', to: 'To', viewLog: 'View lap log', noActivity: 'No personal activity yet.', laps: 'laps', bestLap: 'Best lap', totalLaps: 'Total laps', session: 'session', visibility: 'Visibility', deletePractice: 'Delete practice', deletePracticeConfirm: 'Delete this practice session permanently?',
   },
   id: {
     kicker: 'Akun YurLaps',
@@ -136,7 +136,7 @@ const copy = {
     empty: 'Belum ada transponder. Tambahkan yang pertama di atas.',
     delete: 'Hapus transponder',
     loading: 'Memuat akun kamu...',
-    activityTitle: 'Aktivitas saya', activitySubtitle: 'Partisipasi race dan lap practice milikmu, terpisah dari administrasi community.', practice: 'Practice', race: 'Race', private: 'Private', public: 'Public', all: 'Semua aktivitas', filterTrack: 'Track', from: 'Dari', to: 'Sampai', viewLog: 'Lihat log lap', noActivity: 'Belum ada aktivitas personal.', laps: 'lap', bestLap: 'Best lap', totalLaps: 'Total lap', session: 'sesi', visibility: 'Visibilitas',
+    activityTitle: 'Aktivitas saya', activitySubtitle: 'Partisipasi race dan lap practice milikmu, terpisah dari administrasi community.', practice: 'Practice', race: 'Race', private: 'Private', public: 'Public', all: 'Semua aktivitas', filterTrack: 'Track', from: 'Dari', to: 'Sampai', viewLog: 'Lihat log lap', noActivity: 'Belum ada aktivitas personal.', laps: 'lap', bestLap: 'Best lap', totalLaps: 'Total lap', session: 'sesi', visibility: 'Visibilitas', deletePractice: 'Hapus practice', deletePracticeConfirm: 'Hapus sesi practice ini secara permanen?',
   },
 }
 
@@ -396,6 +396,11 @@ export default function DashboardPage({ session, language, onBack, onSignOut }) 
       setActivityError(getFriendlyError(error, language))
     }
   }
+  const removePractice = async (item) => {
+    if (item.type !== 'practice' || !window.confirm(text.deletePracticeConfirm)) return
+    try { await deletePracticeSession(item.id); setPracticeSessions((current) => current.filter((row) => row.id !== item.id)); setSelectedActivity(null) }
+    catch (error) { setActivityError(getFriendlyError(error, language)) }
+  }
 
   const activities = [
     ...raceSessions.map((item) => ({ ...item, type: 'race', activityAt: item.raced_at })),
@@ -624,7 +629,7 @@ export default function DashboardPage({ session, language, onBack, onSignOut }) 
           </div>
 
           {activityError && <p role="status" className="mt-5 rounded-xl bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-700">{activityError}</p>}
-          {activityLoading ? <div className="mt-6 flex items-center justify-center gap-2 rounded-2xl border border-dashed border-slate-200 py-12 text-sm font-semibold text-slate-500"><Loader2 size={17} className="animate-spin" /> {text.loading}</div> : filteredActivities.length === 0 ? <div className="mt-6 grid place-items-center rounded-2xl border border-dashed border-slate-200 py-12 text-center"><Gauge size={25} className="text-slate-300" /><p className="mt-2 text-sm font-semibold text-slate-500">{text.noActivity}</p></div> : <div className="mt-6 overflow-hidden rounded-2xl border border-slate-200"><ul className="divide-y divide-slate-100">{filteredActivities.map((item) => { const laps = activityLaps(item); const best = laps.length ? Math.min(...laps) : null; return <li key={`${item.type}-${item.id}`} className="flex flex-wrap items-center gap-3 px-4 py-4 transition hover:bg-slate-50"><span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${item.type === 'race' ? 'bg-blue-50 text-ocean' : 'bg-amber-50 text-amber-700'}`}>{item.type === 'race' ? <Flag size={18} /> : <Gauge size={18} />}</span><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><p className="truncate text-sm font-bold text-ink">{item.name || item.track_name || text.practice}</p><span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${item.type === 'race' ? 'bg-blue-50 text-ocean' : 'bg-amber-50 text-amber-700'}`}>{item.type === 'race' ? text.race : text.practice}</span></div><p className="mt-1 flex items-center gap-1.5 text-xs text-slate-500"><CalendarDays size={13} /> {item.track_name || '—'} · {item.activityAt ? new Date(item.activityAt).toLocaleString(language === 'id' ? 'id-ID' : 'en-US', { dateStyle: 'medium', timeStyle: 'short' }) : '—'}</p></div><div className="hidden text-right sm:block"><p className="text-xs font-bold text-ink">{laps.length} {text.laps}</p><p className="font-mono text-xs text-slate-500">{formatLap(best)}</p></div>{item.type === 'practice' && <button type="button" onClick={() => togglePractice(item)} className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-2 text-[10px] font-bold text-slate-600 hover:bg-blue-50 hover:text-ocean">{item.visibility === 'public' ? <Eye size={13} /> : <EyeOff size={13} />}{item.visibility === 'public' ? text.public : text.private}</button>}<button type="button" onClick={() => setSelectedActivity(item)} className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3.5 py-2 text-xs font-bold text-ocean hover:bg-blue-100">{text.viewLog}<ChevronRight size={14} /></button></li> })}</ul></div>}
+          {activityLoading ? <div className="mt-6 flex items-center justify-center gap-2 rounded-2xl border border-dashed border-slate-200 py-12 text-sm font-semibold text-slate-500"><Loader2 size={17} className="animate-spin" /> {text.loading}</div> : filteredActivities.length === 0 ? <div className="mt-6 grid place-items-center rounded-2xl border border-dashed border-slate-200 py-12 text-center"><Gauge size={25} className="text-slate-300" /><p className="mt-2 text-sm font-semibold text-slate-500">{text.noActivity}</p></div> : <div className="mt-6 overflow-hidden rounded-2xl border border-slate-200"><ul className="divide-y divide-slate-100">{filteredActivities.map((item) => { const laps = activityLaps(item); const best = laps.length ? Math.min(...laps) : null; return <li key={`${item.type}-${item.id}`} className="flex flex-wrap items-center gap-3 px-4 py-4 transition hover:bg-slate-50"><span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${item.type === 'race' ? 'bg-blue-50 text-ocean' : 'bg-amber-50 text-amber-700'}`}>{item.type === 'race' ? <Flag size={18} /> : <Gauge size={18} />}</span><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><p className="truncate text-sm font-bold text-ink">{item.name || item.track_name || text.practice}</p><span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${item.type === 'race' ? 'bg-blue-50 text-ocean' : 'bg-amber-50 text-amber-700'}`}>{item.type === 'race' ? text.race : text.practice}</span></div><p className="mt-1 flex items-center gap-1.5 text-xs text-slate-500"><CalendarDays size={13} /> {item.track_name || '—'} · {item.activityAt ? new Date(item.activityAt).toLocaleString(language === 'id' ? 'id-ID' : 'en-US', { dateStyle: 'medium', timeStyle: 'short' }) : '—'}</p></div><div className="hidden text-right sm:block"><p className="text-xs font-bold text-ink">{laps.length} {text.laps}</p><p className="font-mono text-xs text-slate-500">{formatLap(best)}</p></div>{item.type === 'practice' && <button type="button" onClick={() => togglePractice(item)} className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-2 text-[10px] font-bold text-slate-600 hover:bg-blue-50 hover:text-ocean">{item.visibility === 'public' ? <Eye size={13} /> : <EyeOff size={13} />}{item.visibility === 'public' ? text.public : text.private}</button>}<button type="button" onClick={() => setSelectedActivity(item)} className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3.5 py-2 text-xs font-bold text-ocean hover:bg-blue-100">{text.viewLog}<ChevronRight size={14} /></button>{item.type === 'practice' && <button type="button" onClick={() => removePractice(item)} className="inline-flex items-center gap-1.5 rounded-full bg-rose-50 px-3 py-2 text-[10px] font-bold text-rose-600 hover:bg-rose-100"><Trash2 size={13} /> {text.deletePractice}</button>}</li> })}</ul></div>}
         </section>
 
         {activeDetail && <ActivityDetail activity={activeDetail} language={language} text={text} onClose={() => setSelectedActivity(null)} />}
