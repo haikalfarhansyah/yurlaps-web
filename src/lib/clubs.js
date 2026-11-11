@@ -373,22 +373,28 @@ export async function fetchClubRaces(clubId) {
 // limits these reads to non-archived tracks and races belonging to public clubs.
 export async function fetchPublicClubData(clubId) {
   const client = requireClient()
-  const [clubResult, trackResult, raceResult, memberResult] = await Promise.all([
+  const [clubResult, trackResult, raceResult, memberResult] = await Promise.allSettled([
     client.rpc('list_public_clubs'),
     client.from('club_tracks').select('*').eq('club_id', clubId).is('deleted_at', null).order('name'),
     client.from('races').select('*').eq('club_id', clubId).order('raced_at', { ascending: false }),
     client.rpc('list_public_club_members', { p_club_id: clubId }),
   ])
-  if (clubResult.error) throw clubResult.error
-  if (trackResult.error) throw trackResult.error
-  if (raceResult.error) throw raceResult.error
-  if (memberResult.error) throw memberResult.error
-  const club = (clubResult.data || []).find((item) => item.id === clubId)
+  const clubResponse = clubResult.status === 'fulfilled' ? clubResult.value : null
+  let club = !clubResponse?.error ? (clubResponse?.data || []).find((item) => item.id === clubId) : null
+  if (!club && (!clubResponse || clubResponse.error)) {
+    // Keep the public page available when the listing RPC is unavailable.
+    // The visibility filter and Supabase RLS still guard private clubs.
+    const fallback = await client.from('clubs').select('*').eq('id', clubId).eq('visibility', 'public').maybeSingle()
+    if (fallback.error) throw fallback.error
+    club = fallback.data
+  }
   if (!club) return null
+  const optionalData = (result) => result.status === 'fulfilled' && !result.value.error ? result.value.data || [] : []
   return {
     club,
-    tracks: trackResult.data || [],
-    races: (raceResult.data || []).map(normalizeRace),
-    members: memberResult.data || [],
+    tracks: optionalData(trackResult),
+    races: optionalData(raceResult).map(normalizeRace),
+    members: optionalData(memberResult),
+    dataError: [raceResult, trackResult, memberResult].some((result) => result.status === 'rejected' || result.value.error),
   }
 }

@@ -1,1 +1,1 @@
-Salin isi ZIP ke root repository yurlaps-web, lalu jalankan npm install, npm test, dan npm run build. Tidak perlu SQL baru. CSV disembunyikan dari halaman hasil race. PDF website dibuat dari data race yang sudah tersinkron; file PDF biner aplikasi belum diunggah.
+Salin semua isi ZIP ke root repository yurlaps-web (termasuk vercel.json), timpa file lama, commit dan push. Vercel harus deploy dari root repository dengan Build Command npm run build dan Output Directory dist. Tidak perlu SQL baru.
