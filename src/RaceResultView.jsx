@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { chartSeries } from './lib/raceCharts.js'
 import { normalizeRaceRows } from './lib/raceIdentity'
 
-const palette = ['#0877df', '#d16c2e', '#0c8f73', '#8c57b8', '#b48712', '#c04768', '#2f7899', '#775b42']
+const palette = ['#e65a43', '#4988db', '#19a56a', '#a769dc', '#da8e20', '#24a9b4', '#c8508b', '#7a9b2b', '#65758d']
 const num = (value) => value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value)) ? Number(value) : null
 const lapText = (value) => {
   const ms = num(value)
@@ -71,24 +71,6 @@ function LapDetails({ row, label }) {
   </details>
 }
 
-function chartSeries(rows, race) {
-  const config = race?.cfg || race?.session_data?.configuration || {}
-  const grid = config.start_mode === 'grid' && config.rank === 'position'
-  const crossings = rows.map((row) => (row.passings || []).filter((passing) => passing && !passing.origin && passing.accepted !== false && passing.diterima !== false && passing.lap_ms != null && passing.decoder_timecode != null).map((passing) => num(passing.decoder_timecode)))
-  const sharedClock = grid && rows.every((row, index) => crossings[index].length === row.laps.length && crossings[index].every((value) => value !== null))
-  const times = rows.map((row, index) => row.laps.map((_, lapIndex) => sharedClock
-    ? crossings[index][lapIndex]
-    : row.laps.slice(0, lapIndex + 1).reduce((sum, value) => sum + value, 0)))
-  const positions = rows.map(() => [])
-  const gaps = rows.map(() => [])
-  const maxLap = Math.max(0, ...rows.map((row) => row.laps.length))
-  for (let lap = 0; lap < maxLap; lap += 1) {
-    const order = times.map((row, index) => row[lap] == null ? null : { index, time: row[lap] }).filter(Boolean).sort((a, b) => a.time - b.time)
-    order.forEach((entry, position) => { positions[entry.index][lap] = position + 1; gaps[entry.index][lap] = (entry.time - order[0].time) / 1000 })
-  }
-  return { positions, gaps, maxLap, sharedClock }
-}
-
 function ProgressChart({ rows, race, type }) {
   const series = chartSeries(rows, race)
   if (!series.maxLap) return <p className="text-sm text-slate-500">Belum ada lap untuk ditampilkan.</p>
@@ -105,14 +87,14 @@ function ProgressChart({ rows, race, type }) {
   return <div className="rounded-2xl border border-slate-200 bg-white p-3 sm:p-5">
     <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full" role="img" aria-label={type === 'position' ? 'Pergerakan posisi setiap lap' : 'Selisih waktu terhadap pemimpin setiap lap'}>
       {ticks.map((tick) => <g key={tick}>
-        <line x1={left} x2={W - right} y1={y(tick)} y2={y(tick)} stroke="#cbd5e1" strokeDasharray="3 5" />
+        <line x1={left} x2={W - right} y1={y(tick)} y2={y(tick)} stroke="#dce3ec" strokeDasharray="3 5" />
         <text x={left - 8} y={y(tick) + 4} textAnchor="end" fontSize="12" fill="#475569">{type === 'position' ? `P${tick}` : axisTime(tick, gapMax)}</text>
       </g>)}
       {xTicks.map((tick) => <text key={tick} x={x(tick)} y={H - 7} textAnchor="middle" fontSize="11" fill="#64748b">L{tick}</text>)}
       {rows.map((row, index) => {
         const values = type === 'position' ? series.positions[index] : series.gaps[index]
         const points = values.map((value, lap) => value == null ? null : `${x(lap + 1)},${y(value)}`).filter(Boolean).join(' ')
-        return <polyline key={row.uid || row.id || index} points={points} fill="none" stroke={palette[index % palette.length]} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+        return <g key={row.uid || row.id || index}><polyline points={points} fill="none" stroke={palette[index % palette.length]} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />{values.map((value, lap) => value == null ? null : <circle key={lap} cx={x(lap + 1)} cy={y(value)} r="2" fill={palette[index % palette.length]} />)}</g>
       })}
     </svg>
     <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2 text-xs text-slate-600">{rows.map((row, index) => <span key={row.uid || row.id || index} className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: palette[index % palette.length] }} />{row.name || row.nick || `Driver ${index + 1}`}</span>)}</div>
@@ -121,25 +103,26 @@ function ProgressChart({ rows, race, type }) {
 }
 
 function LapDistribution({ rows }) {
-  const [selected, setSelected] = useState(0)
-  const row = rows[Math.min(selected, rows.length - 1)]
-  const laps = row?.laps || []
-  if (!rows.length) return null
-  const min = Math.min(...laps), max = Math.max(...laps)
-  const bins = Array.from({ length: 6 }, () => 0)
-  laps.forEach((lap) => { bins[Math.min(5, Math.floor((lap - min) / Math.max(1, max - min) * 6))] += 1 })
-  const sorted = [...laps].sort((a, b) => a - b)
-  const median = sorted.length ? (sorted[Math.floor((sorted.length - 1) / 2)] + sorted[Math.ceil((sorted.length - 1) / 2)]) / 2 : null
-  return <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
-    <label className="block text-xs font-bold text-slate-600" htmlFor="race-distribution-driver">Pembalap</label>
-    <select id="race-distribution-driver" value={selected} onChange={(event) => setSelected(Number(event.target.value))} className="mt-2 min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-ink sm:max-w-xs">{rows.map((item, index) => <option key={item.uid || item.id || index} value={index}>{item.name || item.nick || `Driver ${index + 1}`}</option>)}</select>
-    {laps.length ? <>
-      <div className="mt-5 grid h-32 grid-cols-6 items-end gap-2 border-b border-slate-300" role="img" aria-label={`Distribusi ${laps.length} lap; paling cepat ${lapText(min)}, median ${lapText(median)}, paling lambat ${lapText(max)}`}>
-        {bins.map((count, index) => <div key={index} className="flex h-full flex-col items-center justify-end gap-1"><span className="text-xs font-semibold text-slate-600">{count}</span><div className="w-full rounded-t-md bg-ocean/80" style={{ height: `${Math.max(count ? 8 : 0, count / Math.max(1, ...bins) * 96)}px` }} /></div>)}
-      </div>
-      <div className="mt-2 flex justify-between text-xs text-slate-500"><span>Cepat · {lapText(min)}</span><span>Lambat · {lapText(max)}</span></div>
-      <p className="mt-3 text-xs text-slate-600">Setiap batang menunjukkan jumlah lap dalam rentang waktu. Median {lapText(median)}.</p>
-    </> : <p className="mt-4 text-sm text-slate-500">Pembalap ini belum memiliki lap tercatat.</p>}
+  const all = rows.flatMap((row) => row.laps)
+  if (!all.length) return <p className="text-sm text-slate-500">Belum ada lap yang dapat dibandingkan.</p>
+  const low = Math.min(...all), high = Math.max(...all)
+  const x = (value) => 185 + (value - low) / Math.max(1, high - low) * 505
+  const ticks = Array.from({ length: 6 }, (_, index) => low + (high - low) * index / 5)
+  const height = Math.max(120, rows.length * 33 + 48)
+  return <div className="rounded-2xl border border-slate-200 bg-white p-3 sm:p-5">
+    <svg viewBox={`0 0 740 ${height}`} className="h-auto w-full" role="img" aria-label="Sebaran waktu lap setiap pembalap: rentang minimum sampai maksimum, kuartil 25 sampai 75 persen, dan median">
+      {ticks.map((tick, index) => <g key={index}><line x1={x(tick)} x2={x(tick)} y1="8" y2={height - 30} stroke="#e2e8f0" strokeDasharray="3 5" /><text x={x(tick)} y={height - 8} textAnchor="middle" fontSize="10" fill="#475569">{(tick / 1000).toFixed(2)}s</text></g>)}
+      {rows.map((row, index) => {
+        const laps = [...row.laps].sort((a, b) => a - b)
+        const y = 20 + index * 33
+        if (!laps.length) return <text key={index} x="8" y={y + 4} fontSize="11" fill="#475569">{(row.nick || row.name || `Driver ${index + 1}`).slice(0, 23)} · belum ada lap</text>
+        const q1 = laps[Math.floor((laps.length - 1) * .25)]
+        const q3 = laps[Math.floor((laps.length - 1) * .75)]
+        const median = (laps[Math.floor((laps.length - 1) / 2)] + laps[Math.ceil((laps.length - 1) / 2)]) / 2
+        return <g key={row.uid || row.id || index}><text x="8" y={y + 4} fontSize="11" fill="#172c43">{(row.nick || row.name || `Driver ${index + 1}`).slice(0, 23)}</text><line x1={x(laps[0])} x2={x(laps.at(-1))} y1={y} y2={y} stroke="#edaaa3" strokeWidth="9" strokeLinecap="round" /><line x1={x(q1)} x2={x(q3)} y1={y} y2={y} stroke="#da594d" strokeWidth="9" strokeLinecap="round" /><line x1={x(median)} x2={x(median)} y1={y - 8} y2={y + 8} stroke="#172c43" strokeWidth="2" /></g>
+      })}
+    </svg>
+    <p className="mt-2 text-xs text-slate-600">Garis terang: lap tercepat sampai terlambat. Garis gelap: 25% sampai 75%. Penanda tegak: median.</p>
   </div>
 }
 
@@ -151,15 +134,14 @@ export default function RaceResultView({ race, language = 'id' }) {
     <section aria-label={id ? 'Hasil race' : 'Race results'}>
       <h3 className="mb-3 text-sm font-extrabold uppercase tracking-wide text-slate-600">{id ? 'Hasil race' : 'Race results'}</h3>
       <div className="space-y-2">
-        <div className="hidden grid-cols-[2rem_minmax(9rem,1.8fr)_4rem_6rem_6rem_5rem] gap-3 px-4 text-[11px] font-bold uppercase tracking-wide text-slate-500 md:grid"><span>Pos</span><span>Driver / status</span><span>Lap</span><span>Total</span><span>Best</span><span>Gap</span></div>
         {rows.map((row, index) => <div key={row.uid || row.id || index} className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
           <div className="grid gap-x-3 gap-y-2 md:grid-cols-[2rem_minmax(9rem,1.8fr)_4rem_6rem_6rem_5rem] md:items-center">
             <span className={`grid h-8 w-8 place-items-center rounded-full text-sm font-extrabold ${index === 0 ? 'bg-amber-100 text-amber-800' : index === 1 ? 'bg-slate-200 text-slate-700' : index === 2 ? 'bg-orange-100 text-orange-800' : 'bg-blue-50 text-ocean'}`}>{row.pos}</span>
             <div className="min-w-0"><b className="block truncate text-sm text-ink">{row.name || row.nick || `Driver ${index + 1}`}</b><span className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500"><span className={`rounded px-1.5 py-0.5 font-bold ${statusText(row) === 'FINISH' ? 'bg-emerald-50 text-emerald-800' : statusText(row) === 'DNF' ? 'bg-amber-50 text-amber-800' : 'bg-slate-100 text-slate-700'}`}>{statusText(row)}</span>{row.transponder ? `TP ${row.transponder}` : ''}</span></div>
-            <span className="text-sm font-semibold text-ink"><small className="mr-1 text-slate-500 md:hidden">Lap</small>{row.n_lap}</span>
-            <span className="font-mono text-xs text-ink"><small className="mr-1 text-slate-500 md:hidden">Total</small>{lapText(row.total_ms)}</span>
-            <span className="font-mono text-xs font-bold text-ocean"><small className="mr-1 text-slate-500 md:hidden">Best</small>{lapText(row.best_ms)}</span>
-            <span className="font-mono text-xs text-slate-600"><small className="mr-1 text-slate-500 md:hidden">Gap</small>{gapText(row.gap_leader)}</span>
+            <span className="text-sm font-semibold text-ink"><small className="mb-1 block text-[11px] font-bold uppercase text-slate-500">Lap</small>{row.n_lap}</span>
+            <span className="font-mono text-xs text-ink"><small className="mb-1 block font-sans text-[11px] font-bold uppercase text-slate-500">Total</small>{lapText(row.total_ms)}</span>
+            <span className="font-mono text-xs font-bold text-ocean"><small className="mb-1 block font-sans text-[11px] font-bold uppercase text-slate-500">Best</small>{lapText(row.best_ms)}</span>
+            <span className="font-mono text-xs text-slate-600"><small className="mb-1 block font-sans text-[11px] font-bold uppercase text-slate-500">Gap</small>{gapText(row.gap_leader)}</span>
           </div>
           <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 border-t border-slate-100 pt-3 text-xs sm:grid-cols-3 lg:grid-cols-5">
             {[["Top 3 avg", lapText(row.top3_ms)], ["Top 3 consecutive", lapText(row.consecutive_ms)], ["P80 avg", lapText(row.p80_ms)], ["Consistency", row.consistency == null ? '–' : `${row.consistency.toFixed(1)}%`], ["Top speed", row.top_speed_kmh == null ? '–' : `${row.top_speed_kmh.toFixed(1)} km/h`]].map(([label, value]) => <div key={label}><span className="block text-[11px] font-bold uppercase tracking-wide text-slate-500">{label}</span><span className="mt-0.5 block font-mono font-semibold text-ink">{value}</span></div>)}

@@ -1,3 +1,4 @@
+import { chartSeries } from './raceCharts.js'
 import { jsPDF } from 'jspdf'
 import { autoTable } from 'jspdf-autotable'
 import { normalizeRaceRows } from './raceIdentity.js'
@@ -107,7 +108,7 @@ export function createRacePdf({ race, rows, language = 'id' } = {}) {
     ...tableOptions(doc),
     startY: 35,
     head: [['POS', 'CHG', 'DRIVER', 'GAP SUM', 'GAP DELTA', 'LAPS', 'TOTAL', 'BEST LAP', 'TOP3 AVG', 'TOP3 CONSEC', 'P80 AVG', 'CONSISTENCY', 'KM/H']],
-    body: data.map((row) => [row.pos, `${row.change == null ? 0 : row.change >= 0 ? '+' : ''}${row.change == null ? 0 : row.change}`, `${row.no || row.pos} · ${row.name}${row.transponder != null ? `\nTP ${row.transponder}` : ''}`, gapLabel(row.gap_leader), gapLabel(row.gap_previous), row.n_lap, lapTime(row.total_ms), lapTime(row.best_ms), lapTime(row.top3_ms), lapTime(row.consecutive_ms), lapTime(row.p80_ms), percent(row.consistency), speed(row.top_speed_kmh)]),
+    body: data.map((row) => [row.pos, `${row.change == null ? 0 : row.change >= 0 ? '+' : ''}${row.change == null ? 0 : row.change}`, `${row.no || row.pos} · ${row.name}${['DNS', 'DNF'].includes(String(row.result_status || '').toUpperCase()) ? ` ${String(row.result_status).toUpperCase()}` : ''}${row.transponder != null ? `\nTP ${row.transponder}` : ''}`, gapLabel(row.gap_leader), gapLabel(row.gap_previous), row.n_lap, lapTime(row.total_ms), lapTime(row.best_ms), lapTime(row.top3_ms), lapTime(row.consecutive_ms), lapTime(row.p80_ms), percent(row.consistency), speed(row.top_speed_kmh)]),
     columnStyles: { 0: { cellWidth: 10, halign: 'center' }, 1: { cellWidth: 12, halign: 'center' }, 2: { cellWidth: 43 }, 3: { cellWidth: 22 }, 4: { cellWidth: 22 }, 5: { cellWidth: 12, halign: 'center' }, 7: { textColor: BLUE, fontStyle: 'bold' } },
     didParseCell(cell) {
       if (cell.section === 'body' && cell.column.index === 0 && cell.row.index < 3) {
@@ -136,38 +137,54 @@ export function createRacePdf({ race, rows, language = 'id' } = {}) {
   // lap distribution follow the lap matrix instead of being omitted online.
   const drawProgress = (kind) => {
     doc.addPage(); sections.set(doc.getNumberOfPages(), kind === 'position' ? 'POSITION PROGRESSION' : 'GAP TO LEADER (SECONDS)')
-    const left = 24; const top = 58; const width = 245; const height = 105
-    doc.setDrawColor(220, 227, 236); doc.line(left, top, left, top + height); doc.line(left, top + height, left + width, top + height)
-    const maxLapsChart = Math.max(1, ...data.map((row) => row.laps.length))
+    const series = chartSeries(data, race)
+    const values = kind === 'position' ? series.positions : series.gaps
+    const maxValue = kind === 'position' ? Math.max(1, data.length) : Math.max(1, ...series.gaps.flat().filter(Number.isFinite))
+    const left = 24, top = 56, width = 232, height = 108
+    const x = (lap) => left + (lap - 1) / Math.max(1, series.maxLap - 1) * width
+    const y = (value) => kind === 'position' ? top + (value - 1) / Math.max(1, maxValue - 1) * height : top + height - value / maxValue * height
+    doc.setFontSize(7).setTextColor(...MUTED)
+    for (let i = 0; i < 6; i += 1) {
+      const tick = kind === 'position' ? 1 + (maxValue - 1) * i / 5 : maxValue * i / 5
+      const yy = y(tick)
+      doc.setDrawColor(220, 227, 236); doc.setLineWidth(.2); doc.line(left, yy, left + width, yy)
+      doc.text(kind === 'position' ? `P${Math.round(tick)}` : `${tick.toFixed(1)}s`, left - 3, yy + 1, { align: 'right' })
+    }
+    const palette = [[230,90,67],[73,136,219],[25,165,106],[167,105,220],[218,142,32],[36,169,180],[200,80,139],[122,155,43],[101,117,141]]
     data.forEach((row, index) => {
-      const color = [[230, 90, 67], [73, 136, 219], [25, 165, 106], [167, 105, 220], [218, 142, 32]][index % 5]
-      doc.setDrawColor(...color); doc.setLineWidth(0.7)
-      const points = row.laps.map((lap, lapIndex) => {
-        const x = left + (lapIndex / Math.max(1, maxLapsChart - 1)) * width
-        const cumulative = row.laps.slice(0, lapIndex + 1).reduce((sum, value) => sum + value, 0)
-        const value = kind === 'position' ? (row.pos || index + 1) : cumulative / 1000
-        const maxValue = kind === 'position' ? Math.max(1, data.length) : Math.max(1, ...data.flatMap((item) => item.laps.reduce((sum, v) => sum + v, 0) / 1000))
-        const y = kind === 'position' ? top + ((value - 1) / Math.max(1, maxValue - 1)) * height : top + height - (value / maxValue) * height
-        return [x, y]
-      })
-      for (let i = 1; i < points.length; i += 1) doc.line(points[i - 1][0], points[i - 1][1], points[i][0], points[i][1])
-      doc.setFontSize(7).setTextColor(...color); doc.text(row.name || `Driver ${index + 1}`, left + width + 5, top + 5 + index * 8)
+      const color = palette[index % palette.length], points = values[index]
+      doc.setDrawColor(...color); doc.setFillColor(...color); doc.setLineWidth(.55)
+      for (let lap = 1; lap < points.length; lap += 1) if (points[lap] != null && points[lap - 1] != null) doc.line(x(lap), y(points[lap - 1]), x(lap + 1), y(points[lap]))
+      points.forEach((value, lap) => { if (value != null) doc.circle(x(lap + 1), y(value), .7, 'F') })
+      doc.setFontSize(7).setTextColor(...color); doc.text((row.nick || row.name || `Driver ${index + 1}`).slice(0, 20), 259, top + 3 + index * 7)
     })
     doc.setFontSize(8).setTextColor(...MUTED); doc.text('Lap', left + width / 2, top + height + 12, { align: 'center' })
   }
   drawProgress('position'); drawProgress('gap')
-  doc.addPage(); sections.set(doc.getNumberOfPages(), 'LAP TIME DISTRIBUTION (WITH MEDIANS)')
-  doc.setFont('helvetica', 'normal').setFontSize(8).setTextColor(...MUTED)
-  doc.text('Light range: minimum to maximum. Dark range: 25th to 75th percentile. Vertical mark: median.', 12, 42)
-  data.forEach((row, index) => {
-    const laps = [...row.laps].sort((a, b) => a - b); if (!laps.length) return
-    const y = 58 + index * 15; const low = laps[0]; const high = laps[laps.length - 1]; const median = laps[Math.floor(laps.length / 2)]
-    const x = (value) => 70 + ((value - low) / Math.max(1, high - low)) * 205
-    doc.setFontSize(7).setTextColor(...INK); doc.text((row.name || `Driver ${index + 1}`).slice(0, 22), 12, y + 2)
-    doc.setDrawColor(237, 170, 163); doc.setLineWidth(4); doc.line(x(low), y, x(high), y)
-    doc.setDrawColor(218, 89, 77); doc.line(x(laps[Math.floor((laps.length - 1) * .25)]), y, x(laps[Math.floor((laps.length - 1) * .75)]), y)
-    doc.setDrawColor(...INK); doc.setLineWidth(0.7); doc.line(x(median), y - 4, x(median), y + 4)
-  })
+  const allLaps = data.flatMap((row) => row.laps)
+  for (let start = 0; start < data.length; start += 10) {
+    doc.addPage(); sections.set(doc.getNumberOfPages(), start ? 'LAP TIME DISTRIBUTION - CONTINUED' : 'LAP TIME DISTRIBUTION (WITH MEDIANS)')
+    const low = Math.min(...allLaps), high = Math.max(...allLaps)
+    const scale = (value) => 72 + (value - low) / Math.max(1, high - low) * 195
+    doc.setFont('helvetica', 'normal').setFontSize(7).setTextColor(...MUTED)
+    doc.text('Light: minimum to maximum. Dark: 25th to 75th percentile. Mark: median.', 12, 42)
+    for (let i = 0; i < 6; i += 1) {
+      const tick = low + (high - low) * i / 5
+      doc.setDrawColor(220, 227, 236); doc.setLineDashPattern([1, 2], 0); doc.line(scale(tick), 50, scale(tick), 188)
+      doc.setLineDashPattern([], 0); doc.text(`${(tick / 1000).toFixed(2)}s`, scale(tick), 194, { align: 'center' })
+    }
+    data.slice(start, start + 10).forEach((row, index) => {
+      const laps = [...row.laps].sort((a, b) => a - b)
+      const yy = 56 + index * 13
+      doc.setFontSize(7).setTextColor(...INK); doc.text((row.nick || row.name || `Driver ${start + index + 1}`).slice(0, 24), 12, yy + 2)
+      if (!laps.length) return
+      const q1 = laps[Math.floor((laps.length - 1) * .25)], q3 = laps[Math.floor((laps.length - 1) * .75)]
+      const median = (laps[Math.floor((laps.length - 1) / 2)] + laps[Math.ceil((laps.length - 1) / 2)]) / 2
+      doc.setDrawColor(237, 170, 163); doc.setLineWidth(3); doc.line(scale(laps[0]), yy, scale(laps.at(-1)), yy)
+      doc.setDrawColor(218, 89, 77); doc.line(scale(q1), yy, scale(q3), yy)
+      doc.setDrawColor(...INK); doc.setLineWidth(.7); doc.line(scale(median), yy - 4, scale(median), yy + 4)
+    })
+  }
 
   const pageCount = doc.getNumberOfPages()
   for (let page = 1; page <= pageCount; page += 1) { doc.setPage(page); drawHeader(doc, race, data, sections.get(page) || (page === 1 ? 'RESULTS' : 'LAP TIMES'), page, pageCount, language) }

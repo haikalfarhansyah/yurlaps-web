@@ -1,1 +1,1 @@
-Salin folder src dari ZIP ini ke root repository yurlaps-web. File RaceResultView.jsx adalah file baru. Jalankan npm install dan npm run build. Tidak ada SQL baru.
+Salin isi ZIP ke root repository yurlaps-web, lalu jalankan npm install, npm test, dan npm run build. Tidak perlu SQL baru. CSV disembunyikan dari halaman hasil race. PDF website dibuat dari data race yang sudah tersinkron; file PDF biner aplikasi belum diunggah.

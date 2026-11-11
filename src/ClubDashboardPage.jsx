@@ -1,4 +1,3 @@
-import { resultValue, csvValue } from './lib/raceValues'
 import { useEffect, useRef, useState } from 'react'
 import {
   ArrowLeft,
@@ -284,28 +283,6 @@ function formatDate(value, language) {
   } catch {
     return String(value)
   }
-}
-
-function exportRaceCsv(race) {
-  const rows = Array.isArray(race.results) ? race.results : []
-  if (!rows.length) return
-  const columns = []
-  for (const row of rows) {
-    for (const key of Object.keys(row)) {
-      if (!columns.includes(key)) columns.push(key)
-    }
-  }
-  const csv = [
-    columns.map(csvValue).join(','),
-    ...rows.map((row) => columns.map((column) => csvValue(row[column])).join(',')),
-  ].join('\n')
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = `${race.name || 'race'}-results.csv`
-  anchor.click()
-  URL.revokeObjectURL(url)
 }
 
 function exportRacePdf(race) {
@@ -1453,14 +1430,6 @@ export default function ClubDashboardPage({
             <RaceResultView key={selectedRace.id} race={selectedRace} language={language} />
 
             <div className="mt-6 flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => exportRaceCsv(selectedRace)}
-                disabled={!Array.isArray(selectedRace.results) || selectedRace.results.length === 0}
-                className="inline-flex items-center gap-2 rounded-2xl bg-ocean px-5 py-3 text-sm font-bold text-white transition hover:bg-[#1855db] disabled:opacity-50"
-              >
-                <Download size={16} /> {text.exportCsv}
-              </button>
               <button
                 type="button"
                 onClick={() => exportRacePdf(selectedRace)}
