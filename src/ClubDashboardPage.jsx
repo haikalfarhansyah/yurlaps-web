@@ -1,5 +1,5 @@
 import { resultValue, csvValue } from './lib/raceValues'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   ArrowLeft,
   Building2,
@@ -20,6 +20,7 @@ import {
   X,
 } from 'lucide-react'
 import { openRacePdfReport } from './lib/racePdf'
+import RaceResultView from './RaceResultView'
 import { isRaceRecordEligible, normalizeRace } from './lib/raceIdentity'
 import {
   clubError,
@@ -322,12 +323,6 @@ function formatLap(ms) {
   return `${Math.floor(value / 60000)}:${String(Math.floor(value / 1000) % 60).padStart(2, '0')}.${String(Math.round(value % 1000)).padStart(3, '0')}`
 }
 
-function formatGap(gap) {
-  if (!gap) return '—'
-  if (gap.laps) return `+${gap.laps} lap`
-  return `+${(Number(gap.ms || 0) / 1000).toFixed(3)}s`
-}
-
 function raceReportRows(race) {
   const config = race?.cfg || race?.session_data?.configuration || race?.sessionData?.configuration || {}
   const gridPosition = config.start_mode === 'grid' && config.rank === 'position'
@@ -387,36 +382,6 @@ function raceReportRows(race) {
   return rows
 }
 
-function RaceMiniChart({ rows, type }) {
-  const width = 720
-  const height = 190
-  const values = rows.flatMap((row) => (type === 'position'
-    ? row.laps.map((_, index) => index + 1)
-    : row.laps.map((_, index) => row.laps.slice(0, index + 1).reduce((sum, value) => sum + value, 0) / 1000)))
-  const maxX = Math.max(1, ...rows.map((row) => row.laps.length))
-  const maxY = type === 'position' ? Math.max(1, rows.length) : Math.max(1, ...values)
-  const colors = ['#0b7cf3', '#ef7d3c', '#12a66a', '#ab59d5', '#e4b32b', '#e34c67']
-  return <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-slate-50/60 p-3">
-    <svg viewBox={`0 0 ${width} ${height}`} className="h-48 min-w-[34rem] w-full" role="img" aria-label={type === 'position' ? 'Position progression' : 'Gap progression'}>
-      <line x1="42" y1="12" x2="42" y2="166" stroke="#cbd5e1" /><line x1="42" y1="166" x2="700" y2="166" stroke="#cbd5e1" />
-      {rows.map((row, rowIndex) => {
-        const points = row.laps.map((_, index) => {
-          const x = 42 + (index / Math.max(1, maxX - 1)) * 658
-          const cumulative = row.laps.slice(0, index + 1).reduce((sum, value) => sum + value, 0) / 1000
-          const value = type === 'position' ? (row.positions?.[index] || row.pos || rowIndex + 1) : (row.gaps?.[index] ?? cumulative)
-          const yValue = type === 'position' ? value : value
-          const y = type === 'position' ? 12 + ((yValue - 1) / Math.max(1, maxY - 1)) * 154 : 166 - (yValue / maxY) * 154
-          return `${x},${y}`
-        }).join(' ')
-        return <polyline key={row.uid || row.id || rowIndex} points={points} fill="none" stroke={colors[rowIndex % colors.length]} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-      })}
-    </svg>
-    <div className="flex flex-wrap gap-x-4 gap-y-1 px-2 text-[11px] font-semibold text-slate-500">
-      {rows.map((row, index) => <span key={row.uid || row.id || index} className="inline-flex items-center gap-1.5"><i className="h-2 w-2 rounded-full" style={{ backgroundColor: colors[index % colors.length] }} />{row.name || row.nick || `Driver ${index + 1}`}</span>)}
-    </div>
-  </div>
-}
-
 export default function ClubDashboardPage({
   session,
   language,
@@ -445,6 +410,15 @@ export default function ClubDashboardPage({
   const [tracks, setTracks] = useState([])
   const [races, setRaces] = useState([])
   const [selectedRace, setSelectedRace] = useState(null)
+  const raceCloseRef = useRef(null)
+  useEffect(() => {
+    if (!selectedRace) return undefined
+    const previousFocus = document.activeElement
+    raceCloseRef.current?.focus()
+    const closeOnEscape = (event) => { if (event.key === 'Escape') setSelectedRace(null) }
+    document.addEventListener('keydown', closeOnEscape)
+    return () => { document.removeEventListener('keydown', closeOnEscape); previousFocus?.focus?.() }
+  }, [selectedRace])
   const [raceFilter, setRaceFilter] = useState({ track: '', from: '', to: '', order: 'newest' })
 
   useEffect(() => {
@@ -1432,9 +1406,10 @@ export default function ClubDashboardPage({
           aria-modal="true"
           aria-labelledby="race-detail-title"
         >
-          <div className="relative my-auto w-full max-w-3xl rounded-[2rem] bg-white p-7 shadow-2xl sm:p-9">
+          <div className="relative my-auto w-full max-w-5xl rounded-[2rem] bg-white p-5 shadow-2xl sm:p-9">
             <button
               type="button"
+              ref={raceCloseRef}
               onClick={() => setSelectedRace(null)}
               className="absolute right-4 top-4 rounded-full p-2 text-slate-400 transition hover:bg-slate-100 hover:text-ink"
               aria-label={text.close}
@@ -1475,47 +1450,7 @@ export default function ClubDashboardPage({
               </div>
             </div>
 
-            {(() => {
-              const reportRows = raceReportRows(selectedRace)
-              const allLaps = reportRows.flatMap((row) => row.laps).filter((value) => Number.isFinite(value))
-              const sortedLaps = [...allLaps].sort((a, b) => a - b)
-              const median = sortedLaps.length ? (sortedLaps[Math.floor((sortedLaps.length - 1) / 2)] + sortedLaps[Math.ceil((sortedLaps.length - 1) / 2)]) / 2 : null
-              return reportRows.length > 0 ? <div className="mt-6 space-y-6">
-                <div>
-                  <h3 className="text-sm font-extrabold uppercase tracking-wide text-slate-500">{text.results}</h3>
-                  <div className="mt-3 overflow-auto rounded-2xl border border-slate-200">
-                    <table className="w-full min-w-[58rem] text-left text-xs">
-                      <thead className="bg-slate-50 uppercase tracking-wide text-slate-400"><tr>
-                        {[text.pos, text.change, text.driver, text.gap, text.laps, text.total, text.bestLap, text.top3, text.top3Consecutive, text.p80, text.consistency, text.topSpeed].map((label) => <th key={label} className="px-3 py-2.5 font-bold">{label}</th>)}
-                      </tr></thead>
-                      <tbody className="divide-y divide-slate-100">{reportRows.map((row, index) => <tr key={row.uid || row.id || index}>
-                        <td className="px-3 py-2.5 font-extrabold text-ocean">{row.pos}</td>
-                        <td className="px-3 py-2.5 font-semibold text-slate-500">{row.change > 0 ? `+${row.change}` : row.change ?? '—'}</td>
-                        <td className="px-3 py-2.5 font-bold text-ink">{row.name || row.nick || `Driver ${index + 1}`}</td>
-                        <td className="px-3 py-2.5 font-semibold text-slate-500">{formatGap(row.gap_leader)}</td>
-                        <td className="px-3 py-2.5 text-slate-600">{row.n_lap}</td>
-                        <td className="px-3 py-2.5 font-mono text-slate-600">{formatLap(row.total_ms)}</td>
-                        <td className="px-3 py-2.5 font-mono font-bold text-ocean">{formatLap(row.best_ms)}</td>
-                        <td className="px-3 py-2.5 font-mono text-slate-600">{formatLap(row.top3_ms)}</td>
-                        <td className="px-3 py-2.5 font-mono text-slate-600">{formatLap(row.consecutive_ms)}</td>
-                        <td className="px-3 py-2.5 font-mono text-slate-600">{formatLap(row.p80_ms)}</td>
-                        <td className="px-3 py-2.5 font-semibold text-slate-600">{row.consistency == null ? '—' : `${Number(row.consistency).toFixed(1)}%`}</td>
-                        <td className="px-3 py-2.5 font-mono text-slate-600">{row.top_speed_kmh == null ? '—' : `${Number(row.top_speed_kmh).toFixed(2)} km/h`}</td>
-                      </tr>)}</tbody>
-                    </table>
-                  </div>
-                </div>
-
-                <div>
-                  <h3 className="text-sm font-extrabold uppercase tracking-wide text-slate-500">{text.lapMatrix}</h3>
-                  <div className="mt-3 max-h-64 overflow-auto rounded-2xl border border-slate-200"><table className="w-full min-w-[34rem] text-left text-xs"><thead className="sticky top-0 bg-slate-50 text-slate-400"><tr><th className="px-3 py-2">{text.driver}</th>{Array.from({ length: Math.max(...reportRows.map((row) => row.laps.length), 0) }, (_, index) => <th key={index} className="px-3 py-2">L{index + 1}</th>)}</tr></thead><tbody className="divide-y divide-slate-100">{reportRows.map((row, index) => <tr key={row.uid || row.id || index}><td className="px-3 py-2 font-bold text-ink">{row.name || row.nick || `Driver ${index + 1}`}</td>{row.laps.map((lap, lapIndex) => <td key={lapIndex} className={`px-3 py-2 font-mono ${lap === row.best_ms ? 'font-bold text-ocean' : 'text-slate-600'}`}>{formatLap(lap)}</td>)}</tr>)}</tbody></table></div>
-                </div>
-
-                <div><h3 className="text-sm font-extrabold uppercase tracking-wide text-slate-500">{text.positionChart}</h3><div className="mt-3"><RaceMiniChart rows={reportRows} type="position" /></div></div>
-                <div><h3 className="text-sm font-extrabold uppercase tracking-wide text-slate-500">{text.gapChart}</h3><div className="mt-3"><RaceMiniChart rows={reportRows} type="gap" /></div></div>
-                <div><h3 className="text-sm font-extrabold uppercase tracking-wide text-slate-500">{text.distribution}</h3><div className="mt-3 grid gap-3 sm:grid-cols-2">{reportRows.map((row, index) => { const fastest = row.laps.length ? Math.min(...row.laps) : null; const slowest = row.laps.length ? Math.max(...row.laps) : null; return <div key={row.uid || row.id || index} className="rounded-2xl bg-mist/60 p-4"><div className="flex items-center justify-between gap-2"><span className="truncate text-sm font-bold text-ink">{row.name || row.nick || `Driver ${index + 1}`}</span><span className="text-xs font-semibold text-slate-500">{row.n_lap} laps</span></div><div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-200"><span className="block h-full rounded-full bg-ocean" style={{ width: `${fastest && slowest ? Math.max(8, Math.min(100, (fastest / slowest) * 100)) : 0}%` }} /></div><div className="mt-2 flex justify-between font-mono text-[11px] text-slate-500"><span>{formatLap(fastest)}</span><span>{text.median}: {formatLap(row.rata_ms || median)}</span><span>{formatLap(slowest)}</span></div></div> })}</div></div>
-              </div> : <p className="mt-3 rounded-xl bg-slate-50 px-4 py-4 text-sm text-slate-500">{text.noResults}</p>
-            })()}
+            <RaceResultView key={selectedRace.id} race={selectedRace} language={language} />
 
             <div className="mt-6 flex flex-wrap gap-2">
               <button

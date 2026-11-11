@@ -9,7 +9,6 @@ import {
   Mail,
   Menu,
   MessageCircle,
-  Users,
   X,
 } from 'lucide-react'
 import { supabase } from './lib/supabase'
@@ -19,10 +18,69 @@ import ClubDashboardPage from './ClubDashboardPage'
 import DesktopLoginPage from './DesktopLoginPage'
 import DownloadPage from './DownloadPage'
 import PublicClubPreview from './PublicClubPreview'
+import { fetchClubsByIds, fetchMyMemberships } from './lib/clubs'
 
 const gallery = [
   { src: '/gallery-transponder-size.png', alt: 'YURLAPS Transponder size comparison' },
 ]
+
+function ProductTeaser({ text }) {
+  const videoRef = useRef(null)
+  const [autoplayBlocked, setAutoplayBlocked] = useState(false)
+
+  useEffect(() => {
+    const video = videoRef.current
+    if (!video) return undefined
+
+    const tryPlay = () => {
+      // Keep audio enabled. Browsers may reject unmuted autoplay until the
+      // visitor interacts with the page, so the fallback button starts it.
+      video.play().then(() => setAutoplayBlocked(false)).catch(() => setAutoplayBlocked(true))
+    }
+
+    if (video.readyState >= 2) tryPlay()
+    else video.addEventListener('canplay', tryPlay, { once: true })
+    return () => video.removeEventListener('canplay', tryPlay)
+  }, [])
+
+  const startVideo = () => {
+    videoRef.current?.play().then(() => setAutoplayBlocked(false)).catch(() => {})
+  }
+
+  return (
+    <section id="teaser" className="mx-auto max-w-6xl px-5 py-14 sm:px-8 lg:py-20">
+      <div className="overflow-hidden rounded-[2rem] border border-blue-100 bg-ink shadow-[0_24px_80px_rgba(7,88,216,0.14)]">
+        <div className="flex flex-wrap items-end justify-between gap-4 px-7 pb-5 pt-7 sm:px-10 sm:pt-9">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.22em] text-blue-300">YurLaps</p>
+            <h2 className="mt-2 font-display text-3xl font-extrabold tracking-[-0.06em] text-white sm:text-5xl">{text.teaserTitle}</h2>
+            <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-300 sm:text-base">{text.teaserText}</p>
+          </div>
+          <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-bold text-blue-100">Auto play · audio aktif</span>
+        </div>
+        <div className="relative aspect-video w-full bg-black">
+          <video
+            ref={videoRef}
+            className="h-full w-full object-cover"
+            src="/yurlaps-teaser.mp4"
+            autoPlay
+            loop
+            playsInline
+            controls
+            preload="auto"
+            onPlay={() => setAutoplayBlocked(false)}
+          />
+          {autoplayBlocked && (
+            <button type="button" onClick={startVideo} className="absolute inset-0 grid place-items-center bg-slate-950/45 text-center text-white backdrop-blur-[2px]">
+              <span className="rounded-2xl bg-ocean px-5 py-3 text-sm font-bold shadow-xl">Putar teaser dengan suara</span>
+            </button>
+          )}
+        </div>
+        <p className="px-7 py-4 text-xs text-slate-400 sm:px-10">{text.teaserNote}</p>
+      </div>
+    </section>
+  )
+}
 
 const pageFromPath = (path = window.location.pathname) => {
   if (path === '/download') return 'download'
@@ -214,7 +272,22 @@ function App() {
   const [authReady, setAuthReady] = useState(false)
   const [signupSuccessOpen, setSignupSuccessOpen] = useState(false)
   const [redirectTarget, setRedirectTarget] = useState(null)
-  const [clubMembership, setClubMembership] = useState(null)
+  const [myClubs, setMyClubs] = useState([])
+  const [clubsLoading, setClubsLoading] = useState(false)
+  const [clubsError, setClubsError] = useState(false)
+  const [accountOpen, setAccountOpen] = useState(false)
+  const [createClubRequest, setCreateClubRequest] = useState(false)
+  const accountMenuRef = useRef(null)
+
+  useEffect(() => {
+    if (!accountOpen) return undefined
+    const close = (event) => {
+      if (event.key === 'Escape' || (event.type === 'pointerdown' && !accountMenuRef.current?.contains(event.target))) setAccountOpen(false)
+    }
+    document.addEventListener('pointerdown', close)
+    document.addEventListener('keydown', close)
+    return () => { document.removeEventListener('pointerdown', close); document.removeEventListener('keydown', close) }
+  }, [accountOpen])
 
   useEffect(() => {
     const timer = window.setTimeout(() => setIsLoading(false), 1800)
@@ -242,21 +315,29 @@ function App() {
 
   useEffect(() => {
     if (!supabase || !session) {
-      setClubMembership(null)
+      setMyClubs([])
+      setClubsLoading(false)
+      setClubsError(false)
       return undefined
     }
     let active = true
-    supabase
-      .from('club_members')
-      .select('club_id, role, status')
-      .eq('user_id', session.user.id)
-      .eq('status', 'active')
-      .order('joined_at', { ascending: true })
-      .limit(1)
-      .maybeSingle()
-      .then(({ data }) => {
-        if (active) setClubMembership(data || null)
-      })
+    setMyClubs([])
+    setClubsLoading(true)
+    setClubsError(false)
+    async function loadClubs() {
+      try {
+        const memberships = (await fetchMyMemberships(session.user.id)).filter((row) => row.status === 'active')
+        const clubs = await fetchClubsByIds(memberships.map((row) => row.club_id))
+        const byId = Object.fromEntries(clubs.map((club) => [club.id, club]))
+        if (active) {
+          setMyClubs(memberships.filter((row) => byId[row.club_id]).map((row) => ({ ...row, name: byId[row.club_id].name })))
+          setClubsLoading(false)
+        }
+      } catch {
+        if (active) { setMyClubs([]); setClubsLoading(false); setClubsError(true) }
+      }
+    }
+    loadClubs()
     return () => {
       active = false
     }
@@ -297,7 +378,7 @@ function App() {
       decoderPrice: 'IDR 2,500,000',
       decoderPoPrice: 'IDR 1,500,000',
       transponderPrice: 'IDR 450,000',
-      transponderPoPrice: 'IDR 350,000',
+      transponderPoPrice: 'IDR 280,000',
       transponderName: 'YURLAPS TRANSPONDER',
       transponderDescription:
         'YURLAPS Transponder is a compact and lightweight active timing device designed for precision RC racing. Using magnetic coupling technology, it continuously transmits a unique 7-digit Personal ID, allowing the timing system to identify vehicles as they pass over the detection loop. Built for demanding racing environments, its waterproof construction and compact design make it easy to install in a wide range of RC vehicles.',
@@ -330,6 +411,9 @@ function App() {
       benefit3Text: 'The 10M coaxial cable gives you room to position the loop and reach the decoder.',
       galleryTitle: 'See it in the real world.',
       galleryText: 'At our core, we are small, light, affordable, and accurate.',
+      teaserTitle: 'See YurLaps in action.',
+      teaserText: 'A short look at the timing system, the track, and the race experience.',
+      teaserNote: 'The teaser starts automatically with audio when the browser allows it. Use the play button if the browser blocks sound until interaction.',
       contactTitle: 'Bring accurate timing to your track.',
       contactText: 'Tell us about your setup, and we will help you get started with YURLAPS.',
       contactButton: 'Contact us',
@@ -394,7 +478,7 @@ function App() {
       decoderPrice: 'IDR 2.500.000',
       decoderPoPrice: 'IDR 1.500.000',
       transponderPrice: 'IDR 450.000',
-      transponderPoPrice: 'IDR 350.000',
+      transponderPoPrice: 'IDR 280.000',
       transponderName: 'YURLAPS TRANSPONDER',
       transponderDescription:
         'YURLAPS Transponder adalah perangkat timing aktif yang ringkas dan ringan, dirancang untuk balap RC dengan presisi tinggi. Menggunakan teknologi magnetic coupling, perangkat ini terus mengirimkan Personal ID unik 7 digit sehingga sistem timing dapat mengenali kendaraan saat melewati detection loop. Dibuat untuk lingkungan balap yang menuntut, konstruksi tahan air dan desainnya yang ringkas membuatnya mudah dipasang pada berbagai jenis kendaraan RC.',
@@ -427,6 +511,9 @@ function App() {
       benefit3Text: 'Kabel coaxial 10M memberi ruang untuk menempatkan loop dan menjangkau decoder.',
       galleryTitle: 'Lihat dalam penggunaan nyata.',
       galleryText: 'Inti dari kami adalah kecil, ringan, terjangkau, dan akurat.',
+      teaserTitle: 'Lihat YurLaps beraksi.',
+      teaserText: 'Gambaran singkat tentang sistem timing, lintasan, dan pengalaman balap.',
+      teaserNote: 'Teaser otomatis berjalan dengan suara jika diizinkan browser. Tekan tombol play jika browser menahan suara sampai ada interaksi.',
       contactTitle: 'Hadirkan timing akurat ke lintasanmu.',
       contactText: 'Ceritakan setup-mu, dan kami akan membantu memulai dengan YURLAPS.',
       contactButton: 'Hubungi kami',
@@ -480,6 +567,7 @@ function App() {
 
   const navigateTo = (path) => {
     setMenuOpen(false)
+    setAccountOpen(false)
     window.history.pushState({}, '', path)
     setClubId(clubIdFromPath(path))
     setCurrentPage(pageFromPath(path))
@@ -497,6 +585,8 @@ function App() {
 
   const openCommunity = () => navigateTo('/community')
 
+  const openCreateClub = () => { setCreateClubRequest(true); openCommunity() }
+
   const openClub = (id) => navigateTo(id && !session ? `/public-club/${id}` : (id ? `/club/${id}` : '/club'))
 
   const openDashboard = () => {
@@ -505,14 +595,6 @@ function App() {
       return
     }
     goDashboard()
-  }
-
-  const openClubDashboard = () => {
-    if (!session) {
-      openLogin()
-      return
-    }
-    openClub(clubMembership?.club_id || null)
   }
 
   const handleRequireLogin = () => {
@@ -592,44 +674,28 @@ function App() {
               {languageOpen && <div className="absolute right-0 top-full z-30 mt-2 w-32 rounded-2xl border border-slate-100 bg-white p-1.5 shadow-card">{[['en', 'English'], ['id', 'Indonesia']].map(([value, label]) => <button key={value} onClick={() => { setLanguage(value); setLanguageOpen(false) }} className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-xs font-semibold ${language === value ? 'bg-mist text-ocean' : 'text-slate-500 hover:bg-slate-50'}`}>{label}{language === value && <Check size={14} />}</button>)}</div>}
             </div>
           </div>
-          {session ? <button onClick={handleSignOut} className="hidden items-center gap-2 rounded-full bg-slate-100 px-4 py-2.5 text-sm font-semibold text-ocean transition hover:bg-blue-100 md:flex">{session.user.email} · {text.logout}</button> : <button onClick={openLogin} className="hidden items-center gap-2 rounded-full bg-ocean px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#1855db] md:flex">{text.login} <LogIn size={16} /></button>}
+          {session ? <div ref={accountMenuRef} className="relative hidden md:block">
+            <button type="button" onClick={() => setAccountOpen((open) => !open)} aria-expanded={accountOpen} aria-haspopup="true" className="flex max-w-[15rem] cursor-pointer items-center gap-2 rounded-full bg-slate-100 px-4 py-2.5 text-sm font-semibold text-ocean transition hover:bg-blue-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ocean">
+              <span className="truncate">{session.user.email}</span><ChevronDown size={15} className={accountOpen ? 'rotate-180' : ''} />
+            </button>
+            {accountOpen && <div aria-label="Menu akun" className="absolute right-0 top-full z-50 mt-2 w-72 rounded-2xl border border-slate-200 bg-white p-2 shadow-xl">
+              <p className="truncate px-3 py-2 text-xs text-slate-500">{session.user.email}</p>
+              <button type="button" onClick={openDashboard} className="flex min-h-11 w-full cursor-pointer items-center gap-2 rounded-xl px-3 text-left text-sm font-bold text-ink hover:bg-blue-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ocean"><LayoutDashboard size={16} />{text.personalDashboard}</button>
+              <div className="my-2 border-t border-slate-100" />
+              <p className="px-3 pb-1 text-xs font-bold uppercase tracking-wide text-slate-500">{text.clubDashboard}</p>
+              {myClubs.map((club) => <button key={club.club_id} type="button" onClick={() => openClub(club.club_id)} className="flex min-h-11 w-full cursor-pointer items-center justify-between gap-3 rounded-xl px-3 text-left text-sm hover:bg-blue-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ocean"><span className="truncate font-semibold text-ink">{club.name}</span><span className="shrink-0 text-xs text-slate-500">{club.role === 'leader' ? 'Leader' : club.role === 'member' ? 'Member' : club.role}</span></button>)}
+              {clubsLoading && <p className="px-3 py-2 text-xs text-slate-500">{language === 'id' ? 'Memuat club…' : 'Loading clubs…'}</p>}
+              {clubsError && <p className="px-3 py-2 text-xs text-rose-700">{language === 'id' ? 'Club belum bisa dimuat. Coba buka menu lagi.' : 'Could not load clubs. Reopen this menu.'}</p>}
+              {!clubsLoading && !clubsError && !myClubs.length && <p className="px-3 py-2 text-xs text-slate-500">{language === 'id' ? 'Belum bergabung ke club.' : 'No clubs yet.'}</p>}
+              <button type="button" onClick={openCreateClub} className="flex min-h-11 w-full cursor-pointer items-center gap-2 rounded-xl px-3 text-left text-sm font-semibold text-ocean hover:bg-blue-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ocean">+ {language === 'id' ? 'Buat club' : 'Create club'}</button>
+              <div className="my-2 border-t border-slate-100" />
+              <button type="button" onClick={handleSignOut} className="min-h-11 w-full cursor-pointer rounded-xl px-3 text-left text-sm text-slate-600 hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ocean">{text.logout}</button>
+            </div>}
+          </div> : <button onClick={openLogin} className="hidden items-center gap-2 rounded-full bg-ocean px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#1855db] md:flex">{text.login} <LogIn size={16} /></button>}
           <button onClick={() => setMenuOpen(!menuOpen)} className="rounded-full p-2 text-slate-700 hover:bg-blue-50 md:hidden" aria-label="Toggle menu">{menuOpen ? <X size={21} /> : <Menu size={21} />}</button>
         </nav>
         <a href="/download" className="block border-t border-blue-100 px-5 py-2 text-center text-sm font-bold text-ocean">Download YurLaps untuk Windows</a>
-        {menuOpen && <div className="relative z-10 border-t border-blue-100 bg-white/95 px-5 py-3 backdrop-blur-md md:hidden">{[['home', text.home], ['products', text.product], ['gallery', text.gallery], ['community', text.community], ['contact', text.contact]].map(([id, label]) => <button key={id} onClick={() => (id === 'community' ? openCommunity() : scrollTo(id))} className="block w-full rounded-xl px-3 py-3 text-left text-sm font-bold text-slate-600 hover:bg-blue-50">{label}</button>)}{session ? <button onClick={handleSignOut} className="mt-2 flex w-full items-center justify-center rounded-xl bg-slate-100 px-4 py-3 text-sm font-bold text-ocean">{text.logout}</button> : <button onClick={openLogin} className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-ocean px-4 py-3 text-sm font-bold text-white">{text.login} <LogIn size={16} /></button>}<div className="mt-2 flex gap-2 border-t border-blue-100 pt-3">{[['en', 'EN'], ['id', 'ID']].map(([value, label]) => <button key={value} onClick={() => setLanguage(value)} className={`rounded-full px-4 py-2 text-xs font-bold ${language === value ? 'bg-ocean text-white' : 'bg-blue-50 text-slate-500'}`}>{label}</button>)}</div></div>}
-        {session && currentPage !== 'dashboard' && currentPage !== 'club' && (
-          <div className="relative z-[5] border-t border-blue-100 bg-mist/80">
-            <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-5 py-2.5 sm:px-8">
-              <span className="min-w-0 truncate text-xs font-semibold text-slate-500">
-                {text.signedInAs}{' '}
-                <span className="font-bold text-ink">
-                  {session.user.user_metadata?.full_name || session.user.email}
-                </span>
-              </span>
-              <div className="flex flex-wrap items-center gap-2">
-                {clubMembership && (
-                  <button
-                    type="button"
-                    onClick={openClubDashboard}
-                    className="inline-flex shrink-0 items-center gap-2 rounded-full bg-white px-4 py-2 text-xs font-bold text-ocean shadow-sm transition hover:bg-blue-50"
-                  >
-                    <Users size={15} />
-                    {['leader', 'co_leader', 'officer'].includes(clubMembership.role)
-                      ? text.clubDashboard
-                      : text.myClub}
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={openDashboard}
-                  className="inline-flex shrink-0 items-center gap-2 rounded-full bg-ocean px-4 py-2 text-xs font-bold text-white transition hover:bg-[#1855db]"
-                >
-                  <LayoutDashboard size={15} /> {text.personalDashboard}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+        {menuOpen && <div className="relative z-10 border-t border-blue-100 bg-white/95 px-5 py-3 backdrop-blur-md md:hidden">{[['home', text.home], ['products', text.product], ['gallery', text.gallery], ['community', text.community], ['contact', text.contact]].map(([id, label]) => <button key={id} onClick={() => (id === 'community' ? openCommunity() : scrollTo(id))} className="block min-h-11 w-full rounded-xl px-3 py-3 text-left text-sm font-bold text-slate-600 hover:bg-blue-50">{label}</button>)}{session ? <div className="mt-2 border-t border-slate-200 pt-2"><p className="truncate px-3 py-2 text-xs text-slate-500">{session.user.email}</p><button onClick={openDashboard} className="min-h-11 w-full rounded-xl px-3 text-left text-sm font-bold text-ocean hover:bg-blue-50">{text.personalDashboard}</button><p className="px-3 pt-3 text-xs font-bold uppercase text-slate-500">{text.clubDashboard}</p>{clubsLoading && <p className="px-3 py-2 text-xs text-slate-500">{language === 'id' ? 'Memuat club…' : 'Loading clubs…'}</p>}{clubsError && <p className="px-3 py-2 text-xs text-rose-700">{language === 'id' ? 'Club belum bisa dimuat.' : 'Could not load clubs.'}</p>}{myClubs.map((club) => <button key={club.club_id} onClick={() => openClub(club.club_id)} className="flex min-h-11 w-full items-center justify-between gap-2 rounded-xl px-3 text-left text-sm hover:bg-blue-50"><span className="truncate">{club.name}</span><span className="text-xs text-slate-500">{club.role}</span></button>)}<button onClick={openCreateClub} className="min-h-11 w-full rounded-xl px-3 text-left text-sm font-semibold text-ocean hover:bg-blue-50">+ {language === 'id' ? 'Buat club' : 'Create club'}</button><button onClick={handleSignOut} className="mt-2 min-h-11 w-full rounded-xl bg-slate-100 px-3 text-left text-sm text-slate-600">{text.logout}</button></div> : <button onClick={openLogin} className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-ocean px-4 py-3 text-sm font-bold text-white">{text.login} <LogIn size={16} /></button>}<div className="mt-2 flex gap-2 border-t border-blue-100 pt-3">{[['en', 'EN'], ['id', 'ID']].map(([value, label]) => <button key={value} onClick={() => setLanguage(value)} className={`rounded-full px-4 py-2 text-xs font-bold ${language === value ? 'bg-ocean text-white' : 'bg-blue-50 text-slate-500'}`}>{label}</button>)}</div></div>}
       </header>
 
       {currentPage === 'download' ? (
@@ -655,6 +721,8 @@ function App() {
         <CommunityPage
           session={session}
           language={language}
+          openCreateOnMount={createClubRequest}
+          onCreateOpened={() => setCreateClubRequest(false)}
           onBack={goHome}
           onRequireLogin={handleRequireLogin}
           onOpenClub={openClub}
@@ -741,6 +809,8 @@ function App() {
               <div className="relative z-10 flex justify-center gap-2 border-t border-slate-100 py-4">{[0, 1, 2, 3].map((index) => <button key={index} type="button" onClick={() => { setActiveProduct(index) }} className={`h-2.5 rounded-full transition-all ${activeProduct === index ? 'w-8 bg-ocean' : 'w-2.5 bg-slate-300'}`} aria-label={`Go to product ${index + 1}`} />)}</div>
             </div>
           </div>
+
+          <ProductTeaser text={text} />
         </section>
 
         <section className="mx-auto max-w-6xl px-5 py-8 sm:px-8"><div className="rounded-3xl bg-blue-50 p-8"><h2 className="font-display text-3xl font-bold">YurLaps untuk Windows</h2><p className="mt-3 text-slate-600">Timing offline, race, dan sinkronisasi club dalam satu aplikasi.</p><a href="/download" className="mt-5 inline-block rounded-xl bg-ocean px-5 py-3 font-bold text-white">Download aplikasi</a></div></section>

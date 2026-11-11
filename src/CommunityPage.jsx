@@ -135,7 +135,7 @@ function initialsOf(name) {
   return `${parts[0][0]}${parts[1][0]}`.toUpperCase()
 }
 
-export default function CommunityPage({ session, language, onBack, onRequireLogin, onOpenClub, onOpenPublicClub = onOpenClub }) {
+export default function CommunityPage({ session, language, onBack, onRequireLogin, onOpenClub, onOpenPublicClub = onOpenClub, openCreateOnMount = false, onCreateOpened }) {
   const text = copy[language] || copy.en
   const [clubs, setClubs] = useState([])
   const [memberships, setMemberships] = useState({})
@@ -149,6 +149,13 @@ export default function CommunityPage({ session, language, onBack, onRequireLogi
   const [createOpen, setCreateOpen] = useState(false)
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState('')
+  useEffect(() => {
+    if (openCreateOnMount && session) {
+      setCreateError('')
+      setCreateOpen(true)
+      onCreateOpened?.()
+    }
+  }, [openCreateOnMount, session])
   const [form, setForm] = useState({
     name: '',
     description: '',
