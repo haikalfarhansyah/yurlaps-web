@@ -2,6 +2,7 @@ import { chartSeries } from './raceCharts.js'
 import { jsPDF } from 'jspdf'
 import { autoTable } from 'jspdf-autotable'
 import { normalizeRaceRows } from './raceIdentity.js'
+import { scheduleClock, scheduleDrivers, scheduleDuration, scheduleOrderLabel } from './schedule.js'
 
 const INK = [17, 35, 63]
 const BLUE = [0, 137, 198]
@@ -197,6 +198,59 @@ export function openRacePdfReport(options = {}) {
   const doc = createRacePdf(options)
   const title = String(options.race.name || options.race.title || 'yurlaps-race')
   const filename = `${title.replace(/[\\/:*?"<>|]/g, '-').trim() || 'yurlaps-race'}-results.pdf`
+  doc.save(filename)
+  return true
+}
+
+/** Jadwal sesi: urutan, jam mulai, dan peserta per sesi. */
+export function createSchedulePdf({ event = {}, rows = [], language = 'id' } = {}) {
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4', compress: true })
+  const width = doc.internal.pageSize.getWidth()
+  const title = String(event.name || 'Jadwal event')
+  doc.setProperties({ title: `${title} - jadwal`, subject: 'Running order and session start times', creator: 'YurLaps' })
+  doc.setFillColor(247, 248, 250); doc.setDrawColor(220, 224, 229); doc.roundedRect(12, 8, width - 24, 16, 2, 2, 'FD')
+  doc.setFont('helvetica', 'bold').setFontSize(10).setTextColor(...INK); doc.text(title.slice(0, 85), 16, 15)
+  doc.setFont('helvetica', 'normal').setFontSize(6.5).setTextColor(101, 117, 138)
+  const detail = `${event.track_name || 'Track'} | ${event.date || '-'} | ${rows.length} sesi | ${scheduleOrderLabel(event)}`
+  doc.text(detail.slice(0, 150), 16, 20)
+  doc.setFont('helvetica', 'bold').setFontSize(8).setTextColor(...BLUE); doc.text('JADWAL SESI', 12, 30)
+
+  const body = rows.length ? rows.map((row, index) => [
+    index + 1,
+    scheduleClock(row.start_ms, language),
+    row.name || '',
+    row.class_name || '',
+    row.group || '',
+    scheduleDrivers(row),
+    scheduleDuration(row.duration_ms),
+    row.seed_source || 'Roster',
+  ]) : [['-', '-', 'Belum ada sesi terjadwal', '-', '-', '-', '-', '-']]
+  autoTable(doc, {
+    ...tableOptions(doc),
+    startY: 35,
+    head: [['NO', 'MULAI', 'SESI', 'KELAS', 'GRUP', 'PEMBALAP', 'DURASI', 'SUMBER PESERTA']],
+    body,
+    columnStyles: {
+      0: { cellWidth: 10, halign: 'center' }, 1: { cellWidth: 18, halign: 'center' },
+      2: { cellWidth: 40 }, 3: { cellWidth: 32 }, 4: { cellWidth: 22 },
+      5: { cellWidth: 78 }, 6: { cellWidth: 18, halign: 'center' }, 7: { cellWidth: 45 },
+    },
+  })
+  const pages = doc.getNumberOfPages()
+  for (let page = 1; page <= pages; page += 1) {
+    doc.setPage(page)
+    doc.setFont('helvetica', 'normal').setFontSize(6.5).setTextColor(101, 117, 138)
+    doc.text('YurLaps | Jadwal event | Urutan, jam mulai, dan peserta per sesi'.slice(0, 150), 12, doc.internal.pageSize.getHeight() - 8)
+    doc.text(`${page} / ${pages}`, width - 12, doc.internal.pageSize.getHeight() - 8, { align: 'right' })
+  }
+  return doc
+}
+
+/** Unduh PDF jadwal event. */
+export function openSchedulePdfReport(options = {}) {
+  const doc = createSchedulePdf(options)
+  const title = String(options.event?.name || 'yurlaps-jadwal')
+  const filename = `${title.replace(/[\\/:*?"<>|]/g, '-').trim() || 'yurlaps-jadwal'}-jadwal.pdf`
   doc.save(filename)
   return true
 }

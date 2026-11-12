@@ -73,6 +73,29 @@ Club behaviour:
 - Tracks are managed by leaders and co-leaders by default.
 - Race results are shown per club and can be exported as CSV from the race detail view.
 
+## Event schedule
+
+The club **Event** page has a schedule section: running order, start time per
+session, class/group, drivers per session, and the seed source of each grid.
+The schedule is computed once in the YurLaps desktop app (`app/schedule.py`)
+and travels inside the shared Event document, so the website never recomputes
+seeding rules and can never disagree with the app.
+
+Apply `supabase/migrations/20261113090000_club_schedule.sql` after the Event
+migration. It exposes the schedule through `list_visible_club_events` and
+rejects a document whose `schedule` or `plans` value is not an array.
+
+Privacy follows the existing Event rules: a driver appears in the schedule only
+when the entry is **approved**, and for anonymous visitors of a public club only
+when the entry is also **checked in**. Transponder ids stay hidden in the
+public list, exactly like the participant list.
+
+The leader can download the schedule as PDF from the Event page (jsPDF); the
+app exports the same table with reportlab.
+
+Validation: `npm test`, `npm run test:schedule` (isolated PGlite database),
+`npm run build`.
+
 ## Automatic account verification
 
 Open **Supabase → Authentication → Sign In / Providers → Email** and turn off **Confirm email**. With confirmation disabled, `signUp` returns an active session and the account is verified automatically right after registration.

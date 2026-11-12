@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react'
 import { Flag, Plus, RefreshCw } from 'lucide-react'
 import RaceResultView from './RaceResultView'
 import { applyClubEvent, eventError, fetchClubEvents, myEventTransponders, newClubEvent, saveClubEvent } from './lib/events'
-import { openRacePdfReport } from './lib/racePdf'
+import { openRacePdfReport, openSchedulePdfReport } from './lib/racePdf'
 import { normalizeRaceRows } from './lib/raceIdentity'
+import { SCHEDULE_KINDS, SCHEDULE_STATUS, scheduleClock, scheduleDrivers, scheduleDuration, scheduleOrderLabel, scheduleRows, scheduleSummary } from './lib/schedule'
 
 const statuses = { draft: 'Draft', registration: 'Pendaftaran', running: 'Berjalan', completed: 'Selesai' }
 const kinds = { qualifying: 'Kualifikasi', heat: 'Heat', main: 'Main', final: 'Final', practice: 'Practice' }
@@ -20,6 +21,8 @@ function EventDetails({ event, races, operator, onChange, busy }) {
   const selected = event.stages.find((stage) => stage.id === selectedStage) || null
   const race = selected ? stageRace(selected, races) : null
   const className = (id) => event.classes.find((item) => item.id === id)?.name || 'Kelas'
+  const schedule = scheduleRows(event)
+  const scheduleInfo = scheduleSummary(schedule)
   const save = async (change) => {
     try { setMessage(''); await onChange(change) } catch (error) { setMessage(error.message) }
   }
@@ -40,7 +43,7 @@ function EventDetails({ event, races, operator, onChange, busy }) {
       id: crypto.randomUUID(), class_id: klass, kind: stageDraft.kind,
       name: stageDraft.name.trim(), group: stageDraft.group.trim() || 'Semua',
       cfg, status: 'planned', race_id: null, entry_ids: stageDraft.entryIds, sequence: current.stages.length + 1,
-    }] }))
+    }], schedule: [] }))
     setStageDraft((old) => ({ ...old, name: '' }))
   }
   return <div className="space-y-5">
@@ -58,6 +61,33 @@ function EventDetails({ event, races, operator, onChange, busy }) {
         {(event.entries || []).filter((entry) => entry.class_id === klass.id).map((entry) => <div key={entry.id} className="flex flex-wrap items-center gap-2 border-b border-slate-100 py-3 text-sm"><span className="min-w-0 flex-1"><b className="text-ink">{entry.nick || entry.name}</b><small className="ml-2 text-slate-500">{entry.transponder ? `TP ${entry.transponder} · ` : ''}{entry.car_brand || 'Mobil'}</small></span><span className="text-xs text-slate-600">{entry.approved ? entry.checked_in ? 'Hadir' : 'Disetujui' : 'Menunggu persetujuan'}</span>{operator && !entry.approved && <button disabled={busy} className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-bold text-ink" onClick={() => save((current) => ({ ...current, entries: current.entries.map((item) => item.id === entry.id ? { ...item, approved: true } : item) }))}>Setujui</button>}{operator && entry.approved && <button disabled={busy} className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-bold text-ink" onClick={() => save((current) => ({ ...current, entries: current.entries.map((item) => item.id === entry.id ? { ...item, checked_in: !item.checked_in } : item) }))}>{entry.checked_in ? 'Batalkan hadir' : 'Check-in'}</button>}</div>)}
         {!event.entries.some((entry) => entry.class_id === klass.id) && <p className="py-3 text-sm text-slate-500">Belum ada peserta.</p>}
       </div>)}
+    </div>
+    <div className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h4 className="font-bold text-ink">Jadwal sesi</h4>
+          <p className="mt-1 text-xs text-slate-500">{scheduleOrderLabel(event)} · {scheduleInfo.sessions} sesi · {scheduleInfo.saved} selesai{scheduleInfo.live ? ` · ${scheduleInfo.live} berjalan` : ''}</p>
+        </div>
+        {operator && schedule.length > 0 && <button type="button" onClick={() => openSchedulePdfReport({ event, rows: schedule, language: 'id' })} className="min-h-11 rounded-xl bg-ocean px-4 text-sm font-bold text-white">Download PDF jadwal</button>}
+      </div>
+      {schedule.length > 0 ? <div className="mt-4 overflow-x-auto">
+        <table className="w-full min-w-[720px] text-left text-sm">
+          <thead className="border-b border-slate-200 text-xs text-slate-500">
+            <tr><th className="py-2">No</th><th>Mulai</th><th>Sesi</th><th>Kelas</th><th>Grup</th><th>Pembalap</th><th>Durasi</th><th>Sumber</th><th>Status</th></tr>
+          </thead>
+          <tbody>{schedule.map((row, index) => <tr key={row.stage_id || `${row.name}-${index}`} className="border-b border-slate-100">
+            <td className="py-2 font-mono text-xs text-slate-500">{index + 1}</td>
+            <td className="py-2 font-mono">{scheduleClock(row.start_ms)}</td>
+            <td className="py-2 font-bold text-ink">{row.name || '—'}</td>
+            <td className="py-2">{row.class_name || '—'}</td>
+            <td className="py-2">{row.group || '—'}</td>
+            <td className="py-2 text-slate-600">{scheduleDrivers(row) || '—'}</td>
+            <td className="py-2 text-slate-600">{scheduleDuration(row.duration_ms)}</td>
+            <td className="py-2 text-xs text-slate-500">{row.seed_source || 'Roster'}</td>
+            <td className="py-2 text-xs font-semibold text-slate-600">{SCHEDULE_STATUS[row.status] || row.status || 'Terjadwal'}</td>
+          </tr>)}</tbody>
+        </table>
+      </div> : <p className="mt-3 text-sm text-slate-500">Belum ada jadwal sesi. Susun jadwal di aplikasi YurLaps pada tab Jadwal; jadwal ikut tersinkron ke halaman ini.</p>}
     </div>
     <div className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6"><h4 className="font-bold text-ink">Jadwal dan hasil sesi</h4>
       <div className="mt-3 divide-y divide-slate-100">{event.stages.map((stage) => <button key={stage.id} type="button" onClick={() => setSelectedStage(stage.id)} className={`flex min-h-14 w-full items-center gap-3 py-2 text-left text-sm hover:text-ocean ${selectedStage === stage.id ? 'text-ocean' : 'text-ink'}`}><span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-slate-100 text-xs font-bold">{stage.sequence}</span><span className="min-w-0 flex-1"><b className="block truncate">{stage.name}</b><small className="text-slate-500">{className(stage.class_id)} · {kinds[stage.kind] || stage.kind} · {stage.group}</small></span><span className="text-xs font-semibold text-slate-500">{stage.status === 'saved' ? 'Hasil' : stage.status === 'live' ? 'Live' : 'Terjadwal'}</span></button>)}</div>
