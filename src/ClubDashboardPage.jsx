@@ -21,6 +21,7 @@ import {
 import { openRacePdfReport } from './lib/racePdf'
 import RaceResultView from './RaceResultView'
 import ClubEventsPage from './ClubEventsPage'
+import ClubLive from './ClubLive'
 import { isRaceRecordEligible, normalizeRace } from './lib/raceIdentity'
 import {
   clubError,
@@ -795,6 +796,7 @@ export default function ClubDashboardPage({
     { id: 'home', label: text.tabs.home, icon: Building2 },
     { id: 'race', label: text.tabs.race, icon: Flag },
     { id: 'event', label: text.tabs.event, icon: Trophy },
+    { id: 'live', label: 'Live', icon: Flag },
     { id: 'member', label: text.tabs.member, icon: Users },
     { id: 'track', label: text.tabs.track, icon: MapPin },
     ...(isLeader ? [{ id: 'setting', label: text.tabs.setting, icon: Settings }] : []),
@@ -990,6 +992,8 @@ export default function ClubDashboardPage({
               </div>
             </div>
           </section>
+        ) : tab === 'live' ? (
+          <ClubLive clubId={activeClubId} />
         ) : tab === 'event' ? (
           <ClubEventsPage clubId={activeClubId} tracks={tracks} races={races} operator={isLeader} userId={user?.id} />
         ) : tab === 'race' ? (

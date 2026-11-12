@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Flag, Plus, RefreshCw } from 'lucide-react'
 import RaceResultView from './RaceResultView'
-import { applyClubEvent, fetchClubEvents, myEventTransponders, newClubEvent, saveClubEvent } from './lib/events'
+import { applyClubEvent, eventError, fetchClubEvents, myEventTransponders, newClubEvent, saveClubEvent } from './lib/events'
 import { openRacePdfReport } from './lib/racePdf'
 import { normalizeRaceRows } from './lib/raceIdentity'
 
@@ -81,7 +81,7 @@ export default function ClubEventsPage({ clubId, tracks = [], races = [], operat
   const [application, setApplication] = useState({ classId: '', transponder: '' })
   const refresh = async () => {
     try { const rows = await fetchClubEvents(clubId, { publicView: publicView || !operator }); setEvents(rows); setError(''); setSelectedId((id) => rows.some((row) => row.id === id) ? id : rows.find((row) => row.status !== 'completed')?.id || rows[0]?.id || null) }
-    catch (cause) { setError(cause.message) }
+    catch (cause) { setError(eventError(cause)) }
     finally { setLoading(false) }
   }
   useEffect(() => { setLoading(true); setSelectedId(null); refresh(); const timer = window.setInterval(refresh, 20000); return () => window.clearInterval(timer) }, [clubId, publicView])
@@ -95,7 +95,7 @@ export default function ClubEventsPage({ clubId, tracks = [], races = [], operat
       const next = { ...changed, revision: (selected.revision || 0) + 1, updated_at: Date.now() / 1000 }
       await saveClubEvent(next, selected.remote_revision)
       await refresh()
-    } catch (cause) { setError(cause.message); throw cause }
+    } catch (cause) { setError(eventError(cause)); throw cause }
     finally { setBusy(false) }
   }
   const create = async (event) => {
@@ -108,13 +108,13 @@ export default function ClubEventsPage({ clubId, tracks = [], races = [], operat
       const draft = newClubEvent({ clubId, name: form.name, date: form.date, track, format: form.format, classes: klasses, bestLegs: form.bestLegs, points })
       const saved = await saveClubEvent(draft)
       await refresh(); setSelectedId(saved.id); setView('active'); setForm({ ...form, name: '', classes: '' })
-    } catch (cause) { setError(cause.message) }
+    } catch (cause) { setError(eventError(cause)) }
     finally { setBusy(false) }
   }
   const apply = async (event) => {
     event.preventDefault(); setBusy(true)
     try { await applyClubEvent(selected.id, application.classId || selected.classes[0]?.id, application.transponder || cars[0]?.transponder_id); setNotice('Pendaftaran dikirim. Operator akan meninjau dan melakukan check-in.'); await refresh() }
-    catch (cause) { setError(cause.message) }
+    catch (cause) { setError(eventError(cause)) }
     finally { setBusy(false) }
   }
   const shown = events.filter((event) => view === 'history' ? event.status === 'completed' : event.status !== 'completed')

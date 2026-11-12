@@ -5,6 +5,16 @@ function client() {
   return supabase
 }
 
+export function eventError(error) {
+  const code = String(error?.code || '')
+  const message = String(error?.message || '')
+  if (['PGRST202', '42P01', '42883'].includes(code) || /save_club_event|club_events|list_visible_club_events/i.test(message) && /not found|does not exist|schema cache/i.test(message)) {
+    return 'Database Event belum dipasang. Jalankan supabase/migrations/20261112090000_club_events.sql di Supabase SQL Editor, lalu muat ulang halaman.'
+  }
+  if (code === '42501' || /active club leader required/i.test(message)) return 'Hanya leader club yang sedang login dapat membuat atau mengubah Event.'
+  return message || 'Event belum dapat dimuat. Coba lagi.'
+}
+
 export async function fetchClubEvents(clubId, { publicView = false } = {}) {
   if (publicView) {
     const { data, error } = await client().rpc('list_visible_club_events', { p_club_id: clubId })
