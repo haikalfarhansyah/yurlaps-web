@@ -20,6 +20,7 @@ import {
 } from 'lucide-react'
 import { openRacePdfReport } from './lib/racePdf'
 import RaceResultView from './RaceResultView'
+import ClubEventsPage from './ClubEventsPage'
 import { isRaceRecordEligible, normalizeRace } from './lib/raceIdentity'
 import {
   clubError,
@@ -49,6 +50,7 @@ const copy = {
     tabs: {
       home: 'Home',
       race: 'Race',
+      event: 'Event',
       member: 'Member',
       track: 'Track',
       setting: 'Setting',
@@ -151,6 +153,7 @@ const copy = {
     tabs: {
       home: 'Home',
       race: 'Race',
+      event: 'Event',
       member: 'Member',
       track: 'Track',
       setting: 'Setting',
@@ -791,6 +794,7 @@ export default function ClubDashboardPage({
   const tabs = [
     { id: 'home', label: text.tabs.home, icon: Building2 },
     { id: 'race', label: text.tabs.race, icon: Flag },
+    { id: 'event', label: text.tabs.event, icon: Trophy },
     { id: 'member', label: text.tabs.member, icon: Users },
     { id: 'track', label: text.tabs.track, icon: MapPin },
     ...(isLeader ? [{ id: 'setting', label: text.tabs.setting, icon: Settings }] : []),
@@ -986,6 +990,8 @@ export default function ClubDashboardPage({
               </div>
             </div>
           </section>
+        ) : tab === 'event' ? (
+          <ClubEventsPage clubId={activeClubId} tracks={tracks} races={races} operator={isLeader} userId={user?.id} />
         ) : tab === 'race' ? (
           <section className="mt-6 rounded-[2rem] border border-blue-100 bg-white p-7 shadow-card sm:p-9">
             <h2 className="font-display text-2xl font-extrabold tracking-[-0.05em] text-ink">

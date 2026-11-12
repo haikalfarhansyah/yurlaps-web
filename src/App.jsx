@@ -729,7 +729,7 @@ function App() {
           onOpenPublicClub={(id) => navigateTo(`/public-club/${id}`)}
         />
       ) : currentPage === 'public-club' ? (
-        <PublicClubPreview clubId={clubId} language={language} onBack={openCommunity} />
+        <PublicClubPreview clubId={clubId} language={language} onBack={openCommunity} userId={session?.user?.id} />
       ) : currentPage === 'club' ? (
         session ? (
           <ClubDashboardPage
@@ -742,7 +742,7 @@ function App() {
             onSelectClub={(id) => openClub(id)}
           />
         ) : clubId ? (
-          <PublicClubPreview clubId={clubId} language={language} onBack={openCommunity} />
+          <PublicClubPreview clubId={clubId} language={language} onBack={openCommunity} userId={session?.user?.id} />
         ) : (
           <main className="grid min-h-[60vh] place-items-center px-5">
             <p className="text-sm font-semibold text-slate-500">{text.loading}</p>
