@@ -16,6 +16,7 @@ import DashboardPage from './DashboardPage'
 import CommunityPage from './CommunityPage'
 import ClubDashboardPage from './ClubDashboardPage'
 import DesktopLoginPage from './DesktopLoginPage'
+import DevicePairPage from './DevicePairPage'
 import DownloadPage from './DownloadPage'
 import PublicClubPreview from './PublicClubPreview'
 import { fetchClubsByIds, fetchMyMemberships } from './lib/clubs'
@@ -85,6 +86,7 @@ function ProductTeaser({ text }) {
 const pageFromPath = (path = window.location.pathname) => {
   if (path === '/download') return 'download'
   if (path === '/desktop-login') return 'desktop-login'
+  if (path === '/device-pair') return 'device-pair'
   if (path === '/login') return 'login'
   if (path === '/dashboard') return 'dashboard'
   if (path === '/community') return 'community'
@@ -702,6 +704,8 @@ function App() {
         <DownloadPage />
       ) : currentPage === 'desktop-login' ? (
         <DesktopLoginPage LoginPage={LoginPage} text={text} onBack={goHome} />
+      ) : currentPage === 'device-pair' ? (
+        <DevicePairPage LoginPage={LoginPage} text={text} onBack={goHome} session={session} />
       ) : currentPage === 'login' ? (
         <LoginPage text={text} onBack={goHome} onSignedIn={handleSignedIn} />
       ) : currentPage === 'dashboard' ? (

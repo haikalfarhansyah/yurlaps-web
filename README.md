@@ -73,29 +73,6 @@ Club behaviour:
 - Tracks are managed by leaders and co-leaders by default.
 - Race results are shown per club and can be exported as CSV from the race detail view.
 
-## Event schedule
-
-The club **Event** page has a schedule section: running order, start time per
-session, class/group, drivers per session, and the seed source of each grid.
-The schedule is computed once in the YurLaps desktop app (`app/schedule.py`)
-and travels inside the shared Event document, so the website never recomputes
-seeding rules and can never disagree with the app.
-
-Apply `supabase/migrations/20261113090000_club_schedule.sql` after the Event
-migration. It exposes the schedule through `list_visible_club_events` and
-rejects a document whose `schedule` or `plans` value is not an array.
-
-Privacy follows the existing Event rules: a driver appears in the schedule only
-when the entry is **approved**, and for anonymous visitors of a public club only
-when the entry is also **checked in**. Transponder ids stay hidden in the
-public list, exactly like the participant list.
-
-The leader can download the schedule as PDF from the Event page (jsPDF); the
-app exports the same table with reportlab.
-
-Validation: `npm test`, `npm run test:schedule` (isolated PGlite database),
-`npm run build`.
-
 ## Automatic account verification
 
 Open **Supabase → Authentication → Sign In / Providers → Email** and turn off **Confirm email**. With confirmation disabled, `signUp` returns an active session and the account is verified automatically right after registration.
@@ -132,6 +109,13 @@ independent desktop session. Tokens are POSTed only to `127.0.0.1`, never put in
 the URL or stored in this page's browser storage. The desktop must validate the
 state, origin, expiration and returned Supabase user before accepting a session.
 Do not send a link with a callback to another person; start login from the app.
+
+For a Raspberry Pi or a YurLaps window opened from another device on the LAN,
+the account menu uses `/device-pair`. Apply
+`supabase/migrations/20261115140000_device_pairing.sql` before using it. The
+host creates a five-minute, one-use ticket, the already logged-in website
+publishes the session through Supabase HTTPS, and the host consumes it once.
+No password or session bearer token is sent to the host's HTTP callback.
 
 Club race results refresh every 15 seconds while the dashboard is visible.
 Track deletion now keeps a tombstone so offline clients can observe deletions.
