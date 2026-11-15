@@ -705,7 +705,7 @@ function App() {
       ) : currentPage === 'desktop-login' ? (
         <DesktopLoginPage LoginPage={LoginPage} text={text} onBack={goHome} />
       ) : currentPage === 'device-pair' ? (
-        <DevicePairPage LoginPage={LoginPage} text={text} onBack={goHome} session={session} />
+        <DevicePairPage LoginPage={LoginPage} text={text} onBack={goHome} />
       ) : currentPage === 'login' ? (
         <LoginPage text={text} onBack={goHome} onSignedIn={handleSignedIn} />
       ) : currentPage === 'dashboard' ? (
