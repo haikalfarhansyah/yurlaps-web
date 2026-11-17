@@ -380,7 +380,7 @@ function App() {
       decoderPrice: 'IDR 2,500,000',
       decoderPoPrice: 'IDR 1,500,000',
       transponderPrice: 'IDR 450,000',
-      transponderPoPrice: 'IDR 280,000',
+      transponderPoPrice: 'IDR 350,000',
       transponderName: 'YURLAPS TRANSPONDER',
       transponderDescription:
         'YURLAPS Transponder is a compact and lightweight active timing device designed for precision RC racing. Using magnetic coupling technology, it continuously transmits a unique 7-digit Personal ID, allowing the timing system to identify vehicles as they pass over the detection loop. Built for demanding racing environments, its waterproof construction and compact design make it easy to install in a wide range of RC vehicles.',
@@ -480,7 +480,7 @@ function App() {
       decoderPrice: 'IDR 2.500.000',
       decoderPoPrice: 'IDR 1.500.000',
       transponderPrice: 'IDR 450.000',
-      transponderPoPrice: 'IDR 280.000',
+      transponderPoPrice: 'IDR 350.000',
       transponderName: 'YURLAPS TRANSPONDER',
       transponderDescription:
         'YURLAPS Transponder adalah perangkat timing aktif yang ringkas dan ringan, dirancang untuk balap RC dengan presisi tinggi. Menggunakan teknologi magnetic coupling, perangkat ini terus mengirimkan Personal ID unik 7 digit sehingga sistem timing dapat mengenali kendaraan saat melewati detection loop. Dibuat untuk lingkungan balap yang menuntut, konstruksi tahan air dan desainnya yang ringkas membuatnya mudah dipasang pada berbagai jenis kendaraan RC.',
